@@ -1,0 +1,40 @@
+  :root{--ink:#5b4033;--soft:#8d6e5c;--paper:#fbf3e6}
+  html,body{margin:0;height:100%;color:var(--ink);font-family:"Fredoka",system-ui,sans-serif;overflow:hidden;
+    touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;background:#e3cdb2}
+
+  /* ---- the cozy room behind everything ---- */
+  #room{position:fixed;inset:0;overflow:hidden;background:linear-gradient(180deg,#f1e1cc 0%,#ead6bd 58%,#c9a582 59%,#b98f68 100%)}
+  #room .glow{position:absolute;right:-20%;top:-10%;width:90%;height:70%;background:radial-gradient(closest-side,rgba(255,236,200,.95),rgba(255,236,200,0));filter:blur(10px)}
+  #room .window{position:absolute;right:6%;top:12%;width:34%;height:30%;border-radius:10px;background:linear-gradient(180deg,#fff6e3,#f6e3c6);filter:blur(6px);opacity:.8}
+  #room .blanket{position:absolute;left:-14%;top:34%;width:46%;height:28%;border-radius:40% 30% 20% 30%;filter:blur(3px);opacity:.8;
+    background:repeating-linear-gradient(45deg,#d7b99c 0 6px,#cfae8f 6px 12px),#d6b597}
+  #room .sofa{position:absolute;left:-10%;top:30%;width:30%;height:34%;border-radius:20px;background:#b9a596;filter:blur(8px);opacity:.55}
+  #room .plant{position:absolute;right:2%;top:36%;width:24%;height:28%;filter:blur(2.5px);opacity:.8}
+  #room svg.lights{position:absolute;left:0;top:0;width:100%;height:80px}
+  .bulb{animation:twinkle 3s ease-in-out infinite}
+  @keyframes twinkle{50%{opacity:.55}}
+  .spark{position:absolute;width:4px;height:4px;border-radius:50%;background:#fff3c8;box-shadow:0 0 8px 3px rgba(255,226,160,.7);animation:drift 9s linear infinite;opacity:0}
+  @keyframes drift{0%{transform:translateY(0);opacity:0}15%{opacity:.9}100%{transform:translateY(-160px) translateX(30px);opacity:0}}
+
+  #app{position:fixed;inset:0;display:flex;flex-direction:column;max-width:520px;margin:0 auto;
+    padding:calc(env(safe-area-inset-top) + 10px) 10px calc(env(safe-area-inset-bottom) + 10px);box-sizing:border-box}
+  header{display:flex;justify-content:space-between;align-items:center;flex:none;height:32px;gap:6px}
+  .sign{background:linear-gradient(180deg,#fff8ec,#f3e3cb);border-radius:6px;padding:5px 9px;font-weight:700;font-size:12px;letter-spacing:.04em;
+    box-shadow:0 2px 0 rgba(91,64,51,.18),0 4px 10px rgba(91,64,51,.1);white-space:nowrap;display:flex;align-items:center;gap:5px}
+  #nextLvl{background:linear-gradient(180deg,#e8c49b,#cfa274);color:#4b3326;border-radius:8px;cursor:pointer;box-shadow:0 3px 0 #9e734d;border:1.5px solid #b88a60}
+  #nextLvl:active{transform:translateY(2px);box-shadow:0 1px 0 #9e734d}
+  .dot{width:10px;height:10px;border-radius:50%;box-shadow:inset 0 -2px 0 rgba(0,0,0,.15),0 0 0 1.5px #fff}
+  #coming{display:flex;justify-content:flex-end;margin-top:6px;flex:none}
+  #coming .sign{font-size:10px;padding:4px 8px;opacity:.92}
+  .grp{display:flex;gap:1px;padding:2px 3px;border-radius:8px;background:rgba(91,64,51,.08)}
+  #stage{position:relative;flex:1;min-height:0}
+  canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+  #tip{min-height:24px;text-align:center;font-family:"Patrick Hand",cursive;font-size:20px;color:#fff8ee;text-shadow:0 1px 3px rgba(91,64,51,.6);flex:none}
+
+  #overlay{position:fixed;inset:0;background:rgba(91,64,51,.4);display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .3s;z-index:7}
+  #overlay.on{opacity:1;pointer-events:auto}
+  .card{background:var(--paper);border-radius:24px;padding:24px 28px;text-align:center;box-shadow:0 10px 0 rgba(91,64,51,.2);position:relative}
+  .card::before{content:"";position:absolute;inset:8px;border:2px dashed rgba(91,64,51,.2);border-radius:18px;pointer-events:none}
+  .card h2{margin:0 0 4px;font-size:32px}
+  .card p{margin:0 0 16px;font-family:"Patrick Hand",cursive;font-size:20px;color:var(--soft)}
+  .cta{display:inline-block;background:linear-gradient(180deg,#e8c49b,#cfa274);color:#4b3326;font-weight:700;font-size:20px;padding:13px 40px;border-radius:999px;box-shadow:0 5px 0 #9e734d;cursor:pointer}

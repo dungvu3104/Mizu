@@ -8,32 +8,7 @@
 <title>Duv's Arcade</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Patrick+Hand&display=swap" rel="stylesheet">
-<style>
-  :root{--ink:#5b4033;--soft:#8d6e5c;--paper:#fbf3e6;--bg1:#f1e1cc;--bg2:#e6cfb3;--btn1:#e8c49b;--btn2:#cfa274;--btnEdge:#9e734d;--shadow:rgba(91,64,51,.18)}
-  @media (prefers-color-scheme: dark){
-    :root:not([data-theme="light"]){--ink:#f3e4d2;--soft:#c9b29e;--paper:#3a2b23;--bg1:#2a1f19;--bg2:#1f1712;--shadow:rgba(0,0,0,.4)}
-  }
-  :root[data-theme="dark"]{--ink:#f3e4d2;--soft:#c9b29e;--paper:#3a2b23;--bg1:#2a1f19;--bg2:#1f1712;--shadow:rgba(0,0,0,.4)}
-  *{box-sizing:border-box}
-  html,body{margin:0}
-  body{min-height:100vh;background:linear-gradient(180deg,var(--bg1),var(--bg2));color:var(--ink);font-family:"Fredoka",system-ui,sans-serif}
-  main{max-width:960px;margin:0 auto;padding:48px 16px 32px}
-  header{text-align:center;margin-bottom:36px}
-  .paw{font-size:40px}
-  h1{margin:6px 0 4px;font-size:clamp(32px,7vw,48px);letter-spacing:.01em}
-  .sub{margin:0;font-family:"Patrick Hand",cursive;font-size:22px;color:var(--soft)}
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px}
-  .card{display:flex;flex-direction:column;background:var(--paper);border-radius:22px;overflow:hidden;color:inherit;text-decoration:none;
-    box-shadow:0 6px 0 var(--shadow),0 10px 24px var(--shadow);transition:transform .15s}
-  .card:hover{transform:translateY(-4px)}
-  .card:active{transform:translateY(2px)}
-  .thumb{aspect-ratio:16/10;display:block;width:100%}
-  .body{padding:14px 18px 18px;display:flex;flex-direction:column;gap:6px;flex:1}
-  .body h2{margin:0;font-size:22px}
-  .body p{margin:0;font-family:"Patrick Hand",cursive;font-size:18px;color:var(--soft);flex:1}
-  .play{align-self:flex-start;margin-top:8px;background:linear-gradient(180deg,var(--btn1),var(--btn2));color:#4b3326;font-weight:700;padding:8px 22px;border-radius:999px;box-shadow:0 4px 0 var(--btnEdge)}
-  footer{text-align:center;margin-top:40px;font-family:"Patrick Hand",cursive;font-size:17px;color:var(--soft)}
-</style>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 <main>

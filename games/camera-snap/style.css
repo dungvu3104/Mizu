@@ -1,0 +1,57 @@
+:root{--bg:#f6efe0;--ink:#4a2e1a;--wick:#c8955a;--wick2:#a87440}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:var(--ink);overflow:hidden;user-select:none;touch-action:none}
+#app{max-width:440px;height:100%;margin:0 auto;display:flex;flex-direction:column;padding:8px 12px 12px;gap:8px}
+header{display:flex;align-items:center;justify-content:space-between;height:34px}
+header b{font-size:18px}
+button{font:inherit;border:2px solid var(--ink);background:#fff8ea;color:var(--ink);border-radius:12px;padding:5px 11px;font-weight:700;cursor:pointer}
+button:active{transform:scale(.94)}
+#tip{font-size:13px;line-height:17px;text-align:center;height:34px;flex:none;display:flex;align-items:center;justify-content:center;overflow:hidden;opacity:.8}
+#queue{display:flex;align-items:center;justify-content:center;gap:6px;height:16px;font-size:12px;font-weight:700;opacity:.8}
+.qd{width:13px;height:13px;border-radius:4px;border:2px solid var(--ink)}
+#baskets{display:flex;gap:10px;justify-content:center;height:70px}
+.basket{width:30%;max-width:112px;height:66px;border:2.5px solid var(--ink);border-radius:10px 10px 20px 20px;background:repeating-linear-gradient(45deg,var(--wick) 0 6px,var(--wick2) 6px 8px),var(--wick);position:relative;display:flex;align-items:center;justify-content:center;gap:5px;padding-top:12px}
+.basket .band{position:absolute;top:-2px;left:-2px;right:-2px;height:14px;border:2.5px solid var(--ink);border-radius:9px 9px 4px 4px}
+.basket.empty{background:none;border-style:dashed;opacity:.3}
+.basket.done{animation:done .45s ease-in forwards}
+@keyframes done{30%{transform:scale(1.12)}100%{transform:translateY(-60px) scale(.6);opacity:0}}
+.basket.new{animation:pop .35s cubic-bezier(.3,1.6,.5,1)}
+@keyframes pop{0%{transform:scale(.3);opacity:0}100%{transform:scale(1);opacity:1}}
+.hole{width:22px;height:22px;border-radius:50%;background:rgba(60,30,10,.45);box-shadow:inset 0 3px 4px rgba(0,0,0,.4);position:relative}
+.hole .m,.slot .m{position:absolute;inset:0}
+#tray{display:flex;gap:8px;justify-content:center;padding:6px;border:2.5px solid var(--ink);border-radius:16px;background:#ead7b5}
+#tray.warn{animation:warn .5s}
+@keyframes warn{25%{background:#f2b6a6}75%{transform:translateX(-4px)}}
+.slot{width:34px;height:34px;border-radius:50%;background:#d6bf98;box-shadow:inset 0 3px 5px rgba(0,0,0,.25);position:relative}
+.slot.danger{box-shadow:inset 0 0 0 2px #d14b3a,inset 0 3px 5px rgba(0,0,0,.25)}
+.m{border-radius:50%;border:2px solid var(--ink)}
+#boardWrap{flex:1;min-height:0;display:flex;align-items:center;justify-content:center}
+svg#board{height:100%;max-width:100%;display:block;touch-action:none;cursor:grab}
+#bottom{display:flex;align-items:center;gap:12px;justify-content:space-between;height:56px;flex:none}
+#preview{font-size:12px;font-weight:700;min-width:120px;line-height:18px;height:54px;display:flex;flex-direction:column;justify-content:center}
+#preview .bad{color:#c43d2b}
+#howto{font-size:12px;line-height:1.5;text-align:right;min-width:120px;opacity:.75}
+#cancel{width:56px;height:56px;flex:none;border-radius:50%;border:3px solid var(--ink);background:#fff8ea;display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:900;line-height:1;opacity:.25;transition:transform .12s,opacity .12s,background .12s}
+#cancel.active{opacity:1}
+#cancel.hot{background:#d14b3a;color:#fff;transform:scale(1.18)}
+svg#board.moving{cursor:grabbing}
+svg#board.moving #camShade{fill-opacity:.3}
+svg#board.cancel #cam{opacity:.35}
+#fly{position:fixed;inset:0;pointer-events:none;z-index:5}
+#fly .m{position:absolute;width:22px;height:22px}
+#over{position:fixed;inset:0;background:rgba(40,25,10,.45);display:none;align-items:center;justify-content:center;z-index:9}
+#over.show{display:flex}
+#card{background:#fff8ea;border:3px solid var(--ink);border-radius:20px;padding:22px 26px;text-align:center;animation:pop .35s cubic-bezier(.3,1.6,.5,1)}
+#card h2{margin:0 0 6px}#card p{margin:0 0 14px;opacity:.75}
+.flash{animation:flash .35s ease-out}
+@keyframes flash{0%{opacity:.95}100%{opacity:0}}
+/* first-time tutorial */
+#tut{position:fixed;inset:0;pointer-events:none;z-index:6;display:none}
+#tut.on{display:block}
+#hand{position:absolute;font-size:42px;margin:-6px 0 0 -14px;filter:drop-shadow(0 3px 4px rgba(0,0,0,.3))}
+#tut.drag #hand{animation:tdrag 2s ease-in-out infinite}
+#tut.point #hand{animation:tpoint 1s ease-in-out infinite}
+#tut.wait #hand{display:none}
+@keyframes tdrag{0%{transform:translate(0,0) scale(1);opacity:0}10%{opacity:1;transform:translate(0,0) scale(.85)}65%{transform:translate(var(--dx),var(--dy)) scale(.85)}80%{transform:translate(var(--dx),var(--dy)) scale(1);opacity:1}100%{transform:translate(var(--dx),var(--dy)) scale(1);opacity:0}}
+@keyframes tpoint{50%{transform:translateY(-10px)}}
+#tutMsg{position:absolute;left:50%;transform:translateX(-50%);background:#fff8ea;border:2.5px solid var(--ink);border-radius:999px;padding:8px 16px;font-weight:800;font-size:16px;white-space:nowrap;box-shadow:0 4px 0 rgba(74,46,26,.2)}
