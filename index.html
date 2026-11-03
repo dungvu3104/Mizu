@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#f1e1cc">
+<meta name="description" content="Duv's little arcade: cozy browser games you can play on your phone or computer.">
+<title>Duv's Arcade</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Patrick+Hand&display=swap" rel="stylesheet">
+<style>
+  :root{--ink:#5b4033;--soft:#8d6e5c;--paper:#fbf3e6;--bg1:#f1e1cc;--bg2:#e6cfb3;--btn1:#e8c49b;--btn2:#cfa274;--btnEdge:#9e734d;--shadow:rgba(91,64,51,.18)}
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){--ink:#f3e4d2;--soft:#c9b29e;--paper:#3a2b23;--bg1:#2a1f19;--bg2:#1f1712;--shadow:rgba(0,0,0,.4)}
+  }
+  :root[data-theme="dark"]{--ink:#f3e4d2;--soft:#c9b29e;--paper:#3a2b23;--bg1:#2a1f19;--bg2:#1f1712;--shadow:rgba(0,0,0,.4)}
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{min-height:100vh;background:linear-gradient(180deg,var(--bg1),var(--bg2));color:var(--ink);font-family:"Fredoka",system-ui,sans-serif}
+  main{max-width:960px;margin:0 auto;padding:48px 16px 32px}
+  header{text-align:center;margin-bottom:36px}
+  .paw{font-size:40px}
+  h1{margin:6px 0 4px;font-size:clamp(32px,7vw,48px);letter-spacing:.01em}
+  .sub{margin:0;font-family:"Patrick Hand",cursive;font-size:22px;color:var(--soft)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px}
+  .card{display:flex;flex-direction:column;background:var(--paper);border-radius:22px;overflow:hidden;color:inherit;text-decoration:none;
+    box-shadow:0 6px 0 var(--shadow),0 10px 24px var(--shadow);transition:transform .15s}
+  .card:hover{transform:translateY(-4px)}
+  .card:active{transform:translateY(2px)}
+  .thumb{aspect-ratio:16/10;display:block;width:100%}
+  .body{padding:14px 18px 18px;display:flex;flex-direction:column;gap:6px;flex:1}
+  .body h2{margin:0;font-size:22px}
+  .body p{margin:0;font-family:"Patrick Hand",cursive;font-size:18px;color:var(--soft);flex:1}
+  .play{align-self:flex-start;margin-top:8px;background:linear-gradient(180deg,var(--btn1),var(--btn2));color:#4b3326;font-weight:700;padding:8px 22px;border-radius:999px;box-shadow:0 4px 0 var(--btnEdge)}
+  footer{text-align:center;margin-top:40px;font-family:"Patrick Hand",cursive;font-size:17px;color:var(--soft)}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="paw">🐾</div>
+    <h1>Duv's Arcade</h1>
+    <p class="sub">Little cozy games. Play them on your phone or computer.</p>
+  </header>
+
+  <div class="grid">
+    <a class="card" href="games/cozy-cat-cafe/">
+      <svg class="thumb" viewBox="0 0 160 100" aria-hidden="true">
+        <rect width="160" height="100" fill="#ead6bd"/><rect y="70" width="160" height="30" fill="#c9a582"/>
+        <g transform="translate(58 34)">
+          <rect x="0" y="0" width="14" height="14" rx="2" fill="#f3b884"/><rect x="15" y="0" width="14" height="14" rx="2" fill="#efc4c3"/><rect x="30" y="0" width="14" height="14" rx="2" fill="#c8ccc0"/>
+          <rect x="0" y="15" width="14" height="14" rx="2" fill="#b88a66"/><rect x="15" y="15" width="14" height="14" rx="2" fill="#f1e8d6"/><rect x="30" y="15" width="14" height="14" rx="2" fill="#f3b884"/>
+          <rect x="0" y="30" width="14" height="14" rx="2" fill="#efc4c3"/><rect x="15" y="30" width="14" height="14" rx="2" fill="#c8ccc0"/><rect x="30" y="30" width="14" height="14" rx="2" fill="#b88a66"/>
+          <circle cx="22" cy="22" r="4" fill="#3b2a22"/>
+        </g>
+        <g fill="#d7c3a6" stroke="#b08e6a"><path d="M30 18h18l-3 9H33z"/><path d="M112 18h18l-3 9h-12z"/></g>
+        <circle cx="39" cy="14" r="5" fill="#f2a65e"/><circle cx="121" cy="14" r="5" fill="#f4a7b3"/>
+      </svg>
+      <div class="body">
+        <h2>Cozy Cat Cafe</h2>
+        <p>Free kittens from a wooden cube and mix them into the cats your customers ask for.</p>
+        <span class="play">Play ▶</span>
+      </div>
+    </a>
+
+    <a class="card" href="games/kitty-jar/">
+      <svg class="thumb" viewBox="0 0 160 100" aria-hidden="true">
+        <rect width="160" height="100" fill="#ead6bd"/><rect y="70" width="160" height="30" fill="#c9a582"/>
+        <rect x="45" y="10" width="70" height="56" rx="4" fill="#e6f6ff" fill-opacity=".5" stroke="#fff" stroke-width="2"/>
+        <rect x="41" y="64" width="78" height="6" rx="2" fill="#c99a6b"/>
+        <line x1="47" y1="32" x2="113" y2="32" stroke="#f29bb0" stroke-width="2" stroke-dasharray="5 3"/>
+        <circle cx="58" cy="56" r="8" fill="#f2a65e"/><circle cx="75" cy="57" r="7" fill="#a8a6a3"/><circle cx="92" cy="54" r="10" fill="#f4a7b3"/><circle cx="106" cy="57" r="7" fill="#f6e5c8"/><circle cx="67" cy="43" r="7" fill="#b07a55"/>
+      </svg>
+      <div class="body">
+        <h2>Kitty Jar</h2>
+        <p>Aim the cube, drop kittens into the jar, and let matching colours snuggle into big fluffy cats.</p>
+        <span class="play">Play ▶</span>
+      </div>
+    </a>
+
+    <a class="card" href="games/camera-snap/">
+      <svg class="thumb" viewBox="0 0 160 100" aria-hidden="true">
+        <rect width="160" height="100" fill="#dfeccd"/>
+        <circle cx="40" cy="30" r="5" fill="#e5484d"/><circle cx="62" cy="52" r="5" fill="#3b82f6"/><circle cx="74" cy="40" r="5" fill="#3fb950"/>
+        <circle cx="90" cy="58" r="5" fill="#f5c518"/><circle cx="118" cy="28" r="5" fill="#a855f7"/><circle cx="125" cy="70" r="5" fill="#f97316"/>
+        <circle cx="30" cy="74" r="5" fill="#3b82f6"/><circle cx="100" cy="82" r="5" fill="#e5484d"/>
+        <g fill="none" stroke="#4a2e1a" stroke-width="3" stroke-linecap="round">
+          <path d="M55 40v-8h8M88 32h8v8M96 58v8h-8M63 66h-8v-8"/>
+        </g>
+      </svg>
+      <div class="body">
+        <h2>Camera Snap</h2>
+        <p>Drag the camera over the marbles and snap to sort them into baskets before the tray fills up.</p>
+        <span class="play">Play ▶</span>
+      </div>
+    </a>
+  </div>
+
+  <footer>Made by Duv · hosted on GitHub Pages</footer>
+</main>
+</body>
+</html>
