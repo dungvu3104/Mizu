@@ -1,6 +1,6 @@
 # MizuWeb
 
-Duv's personal site with small browser games. Live at https://dungvu3104.github.io/MizuWeb/
+Duv's personal site with small browser games. Live at https://dungvu3104.github.io/Mizu/
 
 ```
 index.html          homepage
