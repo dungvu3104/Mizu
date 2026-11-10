@@ -10,6 +10,7 @@ games/
   kitty-jar/        index.html, style.css, script.js
   camera-snap/      index.html, style.css, script.js
   crumble/          index.html
+  drain/            index.html
 ```
 
 Plain HTML, CSS and JavaScript, no build step. The two cat games load three.js from cdnjs.

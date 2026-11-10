@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Drain</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #10131c; overflow: hidden; }
+  body { display: flex; align-items: center; justify-content: center; }
+  canvas { touch-action: none; display: block; border-radius: 14px; -webkit-tap-highlight-color: transparent; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+// ---------- constants ----------
+const VW = 360, VH = 640;            // logical screen
+const SRC = 48;                      // pictures are painted at 48x48, then scaled up to sand
+const GW = 64, PR = 64, HOP = 6;     // sand grid: 64x64 picture + 6 rows of funnel floor
+const GH = PR + HOP, CS = 5;         // cell size in logical px
+const BX = (VW - GW * CS) / 2, BY = 146;
+const EMPTY = 0, WALL = 1, SAND = 2;
+const NHOLE = 4, HWD = 6;            // 4 holes, each 6 cells wide
+const HOLE_X = [5, 21, 37, 53];      // first column of each hole
+const NSLOT = 3, BMAX = 140;         // baskets on top, max grains per basket
+const LX = 8, RX = 352;              // side tubes
+const FLOOR = BY + GH * CS;          // bottom of the sand box
+const CY = FLOOR + 14;               // collector tube under the box
+const BAR = { x: 22, y: 108, w: 316, h: 26 };   // capacity bar, under the baskets
+const BARY = BAR.y + BAR.h / 2;
+const PAD = { y: CY + 20, h: 84 };   // thumb pads: hold one to open the hole above it
+const SPEED = 1000;                  // sand speed inside the tubes, px per second
+const NAV = { prev: 108, next: 252 };  // x of the previous / next level buttons (top row)
+
+// ---------- level painting helpers ----------
+function painter() {
+  const g = new Uint8Array(SRC * SRC);
+  const set = (x, y, c) => { x = Math.round(x); y = Math.round(y); if (x >= 0 && x < SRC && y >= 0 && y < SRC) g[y * SRC + x] = c; };
+  const rect = (x0, y0, x1, y1, c) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) set(x, y, c); };
+  const ell = (cx, cy, rx, ry, c, o = {}) => {
+    for (let y = 0; y < SRC; y++) for (let x = 0; x < SRC; x++) {
+      if (o.ymax !== undefined && y > o.ymax) continue;
+      const dx = (x - cx) / rx, dy = (y - cy) / ry;
+      if (dx * dx + dy * dy <= 1) g[y * SRC + x] = c;
+    }
+  };
+  const ring = (cx, cy, r0, r1, c, ymax) => {
+    for (let y = 0; y <= ymax; y++) for (let x = 0; x < SRC; x++) { const d = Math.hypot(x - cx, y - cy); if (d > r0 && d <= r1) g[y * SRC + x] = c; }
+  };
+  return { g, set, rect, ell, ring };
+}
+
+// cap:   size of the capacity bar as a fraction of all sand in the level
+// mercy: chance that a new basket asks for a colour that is waiting in the bar (1 = very forgiving)
+const LEVELS = [
+  { cap: 0.5, mercy: 1, pal: ['#6ec3ff', '#ffd166', '#ff6f91'], draw(p) {                       // three layers
+      p.rect(0, 0, 47, 15, 1); p.rect(0, 16, 47, 31, 2); p.rect(0, 32, 47, 47, 3); } },
+  { cap: 0.25, mercy: 0.8, pal: ['#ef4b4b', '#ffd23f', '#4cd97b', '#4aa8ff'], draw(p) {         // four stripes
+      p.rect(0, 0, 11, 47, 1); p.rect(12, 0, 23, 47, 2); p.rect(24, 0, 35, 47, 3); p.rect(36, 0, 47, 47, 4); } },
+  { cap: 0.2, mercy: 0.6, pal: ['#ff9f43', '#ffe14d', '#2f6fdb', '#8fd0ff'], draw(p) {          // sunset over the sea
+      p.rect(0, 0, 47, 47, 1); p.ell(23.5, 24, 10, 10, 2); p.rect(0, 28, 47, 47, 3); p.rect(0, 33, 47, 34, 4); p.rect(0, 40, 47, 41, 4); } },
+  { cap: 0.18, mercy: 0.5, pal: ['#ef4b4b', '#fff7ea', '#e8c08a', '#5ecb6b', '#8fd6ff'], draw(p) {   // mushroom
+      p.rect(0, 0, 47, 47, 5); p.rect(0, 39, 47, 47, 4);
+      p.ell(23.5, 23, 20, 16, 1, { ymax: 23 }); p.ell(14, 17, 3, 2.5, 2); p.ell(25, 12, 4, 3, 2); p.ell(34, 18, 3, 2.5, 2);
+      p.rect(17, 24, 30, 38, 3); } },
+  { cap: 0.15, mercy: 0.4, pal: ['#58c063', '#ffd972', '#9a6238', '#2d4a8a', '#e9524a', '#ffb347', '#9fdcff'], draw(p) {   // house
+      p.rect(0, 0, 47, 47, 7); p.rect(0, 42, 47, 47, 1);
+      p.rect(6, 27, 27, 41, 2); p.rect(14, 33, 19, 41, 3); p.rect(8, 30, 11, 33, 4); p.rect(22, 30, 25, 33, 4); p.rect(23, 13, 26, 19, 3);
+      for (let y = 14; y <= 26; y++) { const hw = (y - 14) * 1.1 + 1; for (let x = Math.ceil(16.5 - hw); x <= Math.floor(16.5 + hw); x++) p.set(x, y, 5); }
+      p.rect(37, 31, 40, 41, 3); p.ell(39, 23, 7, 9, 1); p.ell(41, 6, 4, 4, 6); } },
+  { cap: 0.25, mercy: 0.5, pal: ['#ff5964', '#ff9f43', '#ffe14d', '#4cd97b', '#4aa8ff', '#a06bff', '#ffffff', '#39407e', '#58c063'], draw(p) {   // rainbow
+      p.rect(0, 0, 47, 47, 8); p.rect(0, 42, 47, 47, 9);
+      for (let k = 0; k < 6; k++) p.ring(23.5, 38, 20 - k * 3, 23 - k * 3, k + 1, 38);
+      p.ell(7, 40, 7.5, 4.5, 7); p.ell(40, 40, 7.5, 4.5, 7); } },
+];
+
+// ---------- state ----------
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const off = document.createElement('canvas'); off.width = GW; off.height = GH;
+const octx = off.getContext('2d'); const img = octx.createImageData(GW, GH);
+
+let kind, col, shade;                 // per-cell arrays
+let pal, palRGB, slots, remaining, bar, barOrder, barTotal, barCap, sandLeft, state, stateT, tick, rnd, everHeld;
+let grains = [], confetti = [], levelIdx = 0, now = 0, lastT = 0, held = -1;
+try { levelIdx = Math.min(LEVELS.length - 1, parseInt(localStorage.getItem('drain_lvl') || '0', 10) || 0); } catch (e) {}
+
+function hexRGB(h) { const n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
+function rng(seed) { return function () { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function holeDist(x) { let d = 99; for (const h of HOLE_X) d = Math.min(d, x < h ? h - x : x > h + HWD - 1 ? x - (h + HWD - 1) : 0); return d; }
+function holeAt(x) { for (let h = 0; h < NHOLE; h++) if (x >= HOLE_X[h] && x < HOLE_X[h] + HWD) return h; return -1; }
+
+function loadLevel(i) {
+  levelIdx = i; const L = LEVELS[i];
+  try { localStorage.setItem('drain_lvl', String(i)); } catch (e) {}
+  const p = painter(); L.draw(p);
+  const N = GW * GH;
+  kind = new Uint8Array(N); col = new Uint8Array(N); shade = new Int8Array(N);
+  pal = L.pal; palRGB = pal.map(hexRGB); rnd = rng(77 + i);
+  remaining = new Int32Array(pal.length + 1); let sum = 0;
+  for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) {
+    const j = y * GW + x;
+    if (GH - 1 - y < holeDist(x)) { kind[j] = WALL; continue; }                        // funnel floor between the holes
+    const sy = Math.min(SRC - 1, (Math.min(y, PR - 1) * SRC / PR) | 0), sx = (x * SRC / GW) | 0;
+    kind[j] = SAND; col[j] = p.g[sy * SRC + sx] || 1; shade[j] = (Math.random() * 30 - 15) | 0;
+    remaining[col[j]]++; sum++;
+  }
+  sandLeft = sum;
+  bar = new Int32Array(pal.length + 1); barOrder = []; barTotal = 0; barCap = Math.max(60, Math.round(sum * L.cap));
+  slots = [null, null, null]; for (let k = 0; k < NSLOT; k++) slots[k] = pickBasket();
+  grains = []; confetti = []; state = 'play'; stateT = now; tick = 0; held = -1; everHeld = false;
+}
+
+// ---------- audio (tiny, optional) ----------
+let ac = null, lastTick = 0;
+function audio() { if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} } return ac; }
+function blip(f0, f1, dur, type = 'sine', vol = 0.12) {
+  const a = audio(); if (!a) return;
+  const o = a.createOscillator(), g = a.createGain();
+  o.type = type; o.frequency.setValueAtTime(f0, a.currentTime); o.frequency.exponentialRampToValueAtTime(f1, a.currentTime + dur);
+  g.gain.setValueAtTime(vol, a.currentTime); g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + dur);
+  o.connect(g).connect(a.destination); o.start(); o.stop(a.currentTime + dur);
+}
+function grainTick() { if (now - lastTick < 45) return; lastTick = now; blip(1800 + Math.random() * 1400, 900, 0.03, 'triangle', 0.025); }
+
+// ---------- baskets ----------
+function slotPos(k) { return { x: 62 + k * 82, y: 40, w: 66, h: 60 }; }
+function openBucket(c) { return slots.findIndex(s => s && s.col === c && !s.closing && s.got < s.size); }
+
+// colour that is coming out of hole h right now (0 = nothing there)
+function mouth(h) {
+  const cnt = new Int32Array(pal.length + 1); let best = 0;
+  for (let y = GH - 3; y < GH; y++) for (let x = HOLE_X[h]; x < HOLE_X[h] + HWD; x++) { const j = y * GW + x; if (kind[j] === SAND) cnt[col[j]]++; }
+  for (let c = 1; c < cnt.length; c++) if (cnt[c] > cnt[best]) best = c;
+  return cnt[best] ? best : 0;
+}
+
+// A new basket asks for sand the player can actually reach: what sits just above the holes, or what waits in the bar.
+function pickBasket() {
+  const nc = pal.length, cands = []; for (let c = 1; c <= nc; c++) if (remaining[c] > 0) cands.push(c);
+  if (!cands.length) return null;
+  // Sand leaves a hole as a column: what is straight above the hole comes out first.
+  // So look up the column over each hole; sand near the hole counts most.
+  const raw = new Int32Array(nc + 1), score = new Float64Array(nc + 1), need = new Float64Array(nc + 1);
+  for (const hx of HOLE_X) for (let r = 0; r < 36; r++) {
+    const y = GH - 1 - r, w = r < 12 ? 1 : r < 24 ? 0.5 : 0.25;
+    for (let x = hx; x < hx + HWD; x++) { const j = y * GW + x; if (kind[j] === SAND) { if (r < 14) raw[col[j]]++; score[col[j]] += w; } }
+  }
+  for (const c of cands) { need[c] = raw[c] + bar[c]; for (const b of slots) if (b && b.col === c && !b.closing) need[c] -= b.size - b.got; }
+  let pick = -1, best = 0;
+  if (rnd() < LEVELS[levelIdx].mercy) for (const c of cands) if (bar[c] > best && need[c] > 0) { best = bar[c]; pick = c; }
+  if (pick < 0) { best = 0; for (const c of cands) if (need[c] > 0 && score[c] + bar[c] > best) { best = score[c] + bar[c]; pick = c; } }
+  if (pick < 0) { best = 0; for (const c of cands) if (remaining[c] > best) { best = remaining[c]; pick = c; } }
+  let size = Math.min(remaining[pick], BMAX, Math.max(30, Math.round(need[pick])));   // small baskets: only sand that is close
+  if (remaining[pick] - size < 40 && remaining[pick] <= BMAX * 1.3) size = remaining[pick];   // do not leave a tiny rest
+  remaining[pick] -= size;
+  return { col: pick, size, got: 0, born: now, closing: 0 };
+}
+
+// ---------- sand flow ----------
+// a grain fell through a hole: it rides the nearest tube up to the bar
+function collect(c, x) {
+  const fx = BX + (x + 0.5) * CS, left = fx < VW / 2, sx = left ? LX : RX, ex = left ? BAR.x + 6 : BAR.x + BAR.w - 6;
+  sandLeft--;
+  grains.push({ c, pts: [[fx, FLOOR], [fx, CY], [sx, CY], [sx, BARY], [ex, BARY]], seg: 0, x: fx, y: FLOOR, ox: (Math.random() - 0.5) * 5, oy: (Math.random() - 0.5) * 5 });
+}
+
+function toBucket(k, x, y) {       // one grain hops from the bar level into basket k
+  const s = slots[k], p = slotPos(k); s.got++;
+  grains.push({ c: s.col, hop: true, pts: [[x, y], [p.x + p.w / 2, p.y + p.h - 16]], seg: 0, x, y, ox: 0, oy: 0 });
+  grainTick();
+  if (s.got >= s.size) { s.closing = now; blip(520, 1040, 0.16, 'sine', 0.16); if (navigator.vibrate) navigator.vibrate(18); }
+}
+
+function arrive(c, x, y) {         // top of the tube: matching basket, or stay in the bar
+  const k = openBucket(c);
+  if (k >= 0) { toBucket(k, x, y); return; }
+  if (!bar[c]) barOrder.push(c);
+  bar[c]++; barTotal++;
+  if (barTotal > barCap && state === 'play') { state = 'fail'; stateT = now; held = -1; blip(220, 70, 0.5, 'sawtooth', 0.12); if (navigator.vibrate) navigator.vibrate(120); }
+}
+
+function drainBar() {              // stored sand leaves the bar when its basket shows up
+  if (state === 'fail') return;
+  let x = BAR.x;
+  for (const c of barOrder) {
+    const w = bar[c] / barCap * BAR.w;
+    for (let n = 0; n < 5 && bar[c] > 0; n++) {
+      const k = openBucket(c); if (k < 0) break;
+      bar[c]--; barTotal--; toBucket(k, x + Math.random() * Math.max(4, w), BARY);
+    }
+    x += w;
+  }
+  barOrder = barOrder.filter(c => bar[c] > 0);
+}
+
+function moveGrains(dt) {
+  const live = grains; grains = [];
+  for (const g of live) {
+    let stepLeft = SPEED * dt;
+    while (stepLeft > 0 && g.seg < g.pts.length - 1) {
+      const t = g.pts[g.seg + 1], dx = t[0] - g.x, dy = t[1] - g.y, d = Math.hypot(dx, dy);
+      if (d <= stepLeft) { g.x = t[0]; g.y = t[1]; g.seg++; stepLeft -= d; }
+      else { g.x += dx / d * stepLeft; g.y += dy / d * stepLeft; stepLeft = 0; }
+    }
+    if (g.seg < g.pts.length - 1) grains.push(g);
+    else if (!g.hop) arrive(g.c, g.x, g.y);
+  }
+}
+
+// ---------- vacuum: released sand is pulled into each gap so empty space stays at the top ----------
+const topY = new Int32Array(GW);     // first sand row in each column (GH = column is empty)
+function computeTops() {
+  for (let x = 0; x < GW; x++) { let y = 0; while (y < GH && kind[y * GW + x] !== SAND) y++; topY[x] = y; }
+}
+// Cell (x, y) just became empty. Pull sand into it from above, choosing the tallest
+// neighbouring column, so the gap travels up and leaves at the surface.
+function pull(x, y) {
+  for (;;) {
+    let bx = -1, bs = 1e9;
+    for (const dx of [0, -1, 1]) {
+      const nx = x + dx, ny = y - 1;
+      if (nx < 0 || nx >= GW || ny < 0 || kind[ny * GW + nx] !== SAND) continue;
+      const s = topY[nx] + (dx ? 0.5 : 0);           // straight up wins a tie
+      if (s < bs) { bs = s; bx = nx; }
+    }
+    if (bx < 0) { if (topY[x] === y) topY[x] = y + 1; return; }   // nothing above: gap is now at the surface
+    const to = y * GW + x, from = (y - 1) * GW + bx;
+    kind[to] = SAND; col[to] = col[from]; shade[to] = shade[from]; kind[from] = EMPTY;
+    x = bx; y = y - 1;
+  }
+}
+function drainHole(h) {            // the sand at the mouth of hole h leaves; everything above slides down
+  for (let x = HOLE_X[h] + (tick & 1); x < HOLE_X[h] + HWD; x += 2) {   // half the mouth per frame: slower, easier to react
+    const j = (GH - 1) * GW + x;
+    if (kind[j] !== SAND) continue;
+    const c = col[j]; kind[j] = EMPTY; pull(x, GH - 1); collect(c, x);
+  }
+}
+
+function update(dt) {
+  tick++;
+  computeTops();
+  if (held >= 0 && state === 'play') drainHole(held);
+  for (let k = 0; k < NSLOT; k++) {
+    const s = slots[k];
+    if (s && s.closing && now - s.closing > 260) slots[k] = null;
+    if (!slots[k] && state === 'play') slots[k] = pickBasket();
+  }
+  drainBar();
+  moveGrains(dt);
+  if (state === 'play' && sandLeft === 0 && !grains.length && barTotal === 0 && slots.every(s => !s)) {
+    state = 'win'; stateT = now; held = -1;
+    blip(520, 780, 0.12); setTimeout(() => blip(780, 1170, 0.2), 110);
+    for (let k = 0; k < 90; k++) confetti.push({ x: VW / 2, y: 320, vx: (Math.random() - 0.5) * 9, vy: -Math.random() * 10 - 2, c: pal[k % pal.length], r: Math.random() * 6 });
+  }
+}
+
+// ---------- rendering ----------
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function padRect(h) { const w = GW * CS / NHOLE; return { x: BX + h * w + 4, y: PAD.y, w: w - 8, h: PAD.h }; }
+
+function drawBoard() {
+  const d = img.data;
+  for (let i = 0; i < GW * GH; i++) {
+    const o = i * 4, k = kind[i];
+    if (k === EMPTY) { d[o + 3] = 0; continue; }
+    if (k === WALL) { d[o] = 58; d[o + 1] = 66; d[o + 2] = 96; d[o + 3] = 255; continue; }
+    const c = palRGB[col[i] - 1], m = 1 + shade[i] / 100;
+    d[o] = Math.min(255, c[0] * m); d[o + 1] = Math.min(255, c[1] * m); d[o + 2] = Math.min(255, c[2] * m); d[o + 3] = 255;
+  }
+  octx.putImageData(img, 0, 0);
+  ctx.fillStyle = '#171b28'; rr(BX - 2, BY - 2, GW * CS + 4, GH * CS + 2, 6); ctx.fill();
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(off, BX, BY, GW * CS, GH * CS);
+  // floor with a gate under each hole: the gate opens while its pad is held
+  ctx.fillStyle = '#3a4260'; ctx.fillRect(BX - 2, FLOOR, GW * CS + 4, 5);
+  for (let h = 0; h < NHOLE; h++) {
+    const x = BX + HOLE_X[h] * CS, w = HWD * CS;
+    if (held === h) { ctx.fillStyle = '#12151f'; ctx.fillRect(x, FLOOR, w, 5); }
+    else { ctx.fillStyle = '#aab3d1'; ctx.fillRect(x, FLOOR, w, 5); }
+  }
+}
+
+function tubePath() {
+  ctx.beginPath(); ctx.moveTo(BAR.x + 4, BARY); ctx.lineTo(LX, BARY); ctx.lineTo(LX, CY); ctx.lineTo(RX, CY); ctx.lineTo(RX, BARY); ctx.lineTo(BAR.x + BAR.w - 4, BARY);
+  for (let h = 0; h < NHOLE; h++) { const x = BX + (HOLE_X[h] + HWD / 2) * CS; ctx.moveTo(x, FLOOR + 6); ctx.lineTo(x, CY); }
+}
+function drawTube() {
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  tubePath(); ctx.strokeStyle = '#4a5478'; ctx.lineWidth = 11; ctx.stroke();
+  tubePath(); ctx.strokeStyle = '#12151f'; ctx.lineWidth = 8; ctx.stroke();
+}
+function drawGrains() { for (const g of grains) { ctx.fillStyle = pal[g.c - 1]; ctx.fillRect(g.x + g.ox - 1.5, g.y + g.oy - 1.5, 3, 3); } }
+
+function drawPads() {
+  for (let h = 0; h < NHOLE; h++) {
+    const p = padRect(h), on = held === h, m = mouth(h);
+    rr(p.x, p.y + (on ? 3 : 0), p.w, p.h, 14); ctx.fillStyle = on ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.07)'; ctx.fill();
+    ctx.lineWidth = 2.5; ctx.strokeStyle = on ? '#ffffff' : 'rgba(255,255,255,0.22)'; ctx.stroke();
+    // dot shows the colour that will come out of this hole
+    if (m) { ctx.beginPath(); ctx.arc(p.x + p.w / 2, p.y + p.h / 2 + (on ? 3 : 0), 13, 0, 7); ctx.fillStyle = pal[m - 1]; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.stroke(); }
+  }
+}
+
+function bucketShape(w, h) { ctx.beginPath(); ctx.moveTo(2, 6); ctx.lineTo(w - 2, 6); ctx.lineTo(w - 9, h - 6); ctx.quadraticCurveTo(w - 10, h, w - 16, h); ctx.lineTo(16, h); ctx.quadraticCurveTo(10, h, 9, h - 6); ctx.closePath(); }
+function drawBucket(k) {
+  const p = slotPos(k), s = slots[k];
+  let sc = 1, alpha = 1;
+  if (s) {
+    sc = 0.85 + 0.15 * Math.min(1, (now - s.born) / 160);
+    if (s.closing) { const t = (now - s.closing) / 260; sc = 1 + Math.sin(t * Math.PI) * 0.16; alpha = t > 0.6 ? Math.max(0, 1 - (t - 0.6) / 0.4) : 1; }
+  }
+  ctx.save(); ctx.translate(p.x + p.w / 2, p.y + p.h / 2); ctx.scale(sc, sc); ctx.translate(-p.w / 2, -p.h / 2); ctx.globalAlpha = alpha;
+  bucketShape(p.w, p.h); ctx.fillStyle = s ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.04)'; ctx.fill();
+  if (s) {
+    const f = Math.min(1, s.got / s.size), fh = (p.h - 8) * f;
+    ctx.save(); bucketShape(p.w, p.h); ctx.clip();
+    ctx.globalAlpha = alpha * 0.25; ctx.fillStyle = pal[s.col - 1]; ctx.fillRect(0, 0, p.w, p.h);   // tint shows the wanted colour
+    ctx.globalAlpha = alpha; ctx.fillRect(0, p.h - fh, p.w, fh);
+    ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.fillRect(0, p.h - fh, p.w, 3);
+    ctx.restore();
+  }
+  bucketShape(p.w, p.h); ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.strokeStyle = s ? pal[s.col - 1] : 'rgba(255,255,255,0.18)';
+  if (!s) ctx.setLineDash([5, 5]); ctx.stroke(); ctx.setLineDash([]);
+  ctx.restore();
+}
+
+function drawBar() {
+  const b = BAR, f = barTotal / barCap, danger = f > 0.7;
+  rr(b.x, b.y, b.w, b.h, 9); ctx.fillStyle = '#171b28'; ctx.fill();
+  ctx.save(); rr(b.x, b.y, b.w, b.h, 9); ctx.clip();
+  let x = b.x;
+  for (const c of barOrder) { const w = bar[c] / barCap * b.w; ctx.fillStyle = pal[c - 1]; ctx.fillRect(x, b.y, w + 0.5, b.h); x += w; }
+  ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(b.x, b.y, x - b.x, 4);
+  ctx.restore();
+  rr(b.x, b.y, b.w, b.h, 9); ctx.lineWidth = 3;
+  ctx.strokeStyle = danger ? `rgba(255,77,94,${0.6 + 0.4 * Math.sin(now / 90)})` : 'rgba(255,255,255,0.28)'; ctx.stroke();
+}
+
+function iconRestart(cx, cy, r, colr) {
+  ctx.strokeStyle = colr; ctx.lineWidth = r * 0.26; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI * 0.35, Math.PI * 1.35); ctx.stroke();
+  const a = -Math.PI * 0.35, ax = cx + Math.cos(a) * r, ay = cy + Math.sin(a) * r;
+  ctx.fillStyle = colr; ctx.beginPath(); ctx.moveTo(ax + r * 0.5, ay + r * 0.1); ctx.lineTo(ax - r * 0.25, ay - r * 0.55); ctx.lineTo(ax - r * 0.3, ay + r * 0.4); ctx.fill();
+}
+
+function render() {
+  ctx.setTransform(cv.width / VW, 0, 0, cv.height / VH, 0, 0);
+  const bg = ctx.createLinearGradient(0, 0, 0, VH); bg.addColorStop(0, '#2b3350'); bg.addColorStop(1, '#1d2236');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, VW, VH);
+  // previous / next level buttons around the level dots
+  const dotsW = (LEVELS.length - 1) * 16, d0 = VW / 2 - dotsW / 2;
+  for (let i = 0; i < LEVELS.length; i++) {
+    ctx.beginPath(); ctx.arc(d0 + i * 16, 20, i === levelIdx ? 5 : 3.5, 0, 7);
+    ctx.fillStyle = i < levelIdx ? '#7fe3a0' : i === levelIdx ? '#ffffff' : 'rgba(255,255,255,0.25)'; ctx.fill();
+  }
+  for (const [bx, dir] of [[NAV.prev, -1], [NAV.next, 1]]) {
+    const on = dir < 0 ? levelIdx > 0 : levelIdx < LEVELS.length - 1;
+    ctx.beginPath(); ctx.arc(bx, 20, 14, 0, 7); ctx.fillStyle = on ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)'; ctx.fill();
+    ctx.fillStyle = on ? '#ffffff' : 'rgba(255,255,255,0.25)';
+    ctx.beginPath(); ctx.moveTo(bx + dir * 6, 20); ctx.lineTo(bx - dir * 4, 13); ctx.lineTo(bx - dir * 4, 27); ctx.fill();
+  }
+  iconRestart(338, 20, 8, 'rgba(255,255,255,0.75)');
+  drawTube();
+  for (let k = 0; k < NSLOT; k++) drawBucket(k);
+  drawBoard();
+  drawBar();
+  drawPads();
+  drawGrains();
+  // hint: pulse on a pad whose colour a basket wants
+  if (levelIdx < 2 && !everHeld && state === 'play') {
+    let h = 0; for (let k = 0; k < NHOLE; k++) if (openBucket(mouth(k)) >= 0) { h = k; break; }
+    const p = padRect(h), hx = p.x + p.w / 2, hy = p.y + p.h / 2, t = (now % 1100) / 1100;
+    ctx.strokeStyle = `rgba(255,255,255,${1 - t})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(hx, hy, 16 + t * 26, 0, 7); ctx.stroke();
+  }
+  for (const c of confetti) { c.x += c.vx; c.y += c.vy; c.vy += 0.35; c.r += 0.2; ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.r); ctx.fillStyle = c.c; ctx.fillRect(-4, -3, 8, 6); ctx.restore(); }
+  if (state !== 'play') {
+    const t = Math.min(1, (now - stateT - (state === 'win' ? 500 : 200)) / 250);
+    if (t > 0) {
+      ctx.fillStyle = `rgba(16,19,28,${0.6 * t})`; ctx.fillRect(0, 0, VW, VH);
+      const cx = VW / 2, cy = 320, r = 54 * (0.6 + 0.4 * t);
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fillStyle = state === 'win' ? '#4cd97b' : '#ff4d5e'; ctx.fill();
+      if (state === 'win') { ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(cx - 14, cy - 24); ctx.lineTo(cx + 26, cy); ctx.lineTo(cx - 14, cy + 24); ctx.fill(); }
+      else iconRestart(cx, cy, 24, '#fff');
+    }
+  }
+}
+
+// ---------- loop + input ----------
+function frame(t) { const dt = Math.min(0.05, Math.max(0, (t - lastT) / 1000)); lastT = t; now = t; update(dt); render(); requestAnimationFrame(frame); }
+
+function fit() {
+  const s = Math.min(innerWidth / VW, innerHeight / VH), dpr = Math.min(3, devicePixelRatio || 1);
+  cv.style.width = VW * s + 'px'; cv.style.height = VH * s + 'px';
+  cv.width = Math.round(VW * s * dpr); cv.height = Math.round(VH * s * dpr);
+}
+addEventListener('resize', fit); fit();
+
+function local(e) { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * VW, (e.clientY - r.top) / r.height * VH]; }
+function holdAt(x, y) {            // anywhere in a hole's column, from the picture down to the pads
+  if (state !== 'play' || y < BY) { held = -1; return; }
+  held = Math.max(0, Math.min(NHOLE - 1, Math.floor((x - BX) / (GW * CS / NHOLE)))); everHeld = true;
+}
+let pointerDown = false;
+cv.addEventListener('pointerdown', e => {
+  e.preventDefault(); const a = audio(); if (a && a.state === 'suspended') a.resume();
+  const [x, y] = local(e);
+  if (y < 38 && Math.abs(x - NAV.prev) < 20) { if (levelIdx > 0) loadLevel(levelIdx - 1); return; }
+  if (y < 38 && Math.abs(x - NAV.next) < 20) { if (levelIdx < LEVELS.length - 1) loadLevel(levelIdx + 1); return; }
+  if (state === 'win') { if (now - stateT > 600) loadLevel((levelIdx + 1) % LEVELS.length); return; }
+  if (state === 'fail') { if (now - stateT > 350) loadLevel(levelIdx); return; }
+  if (x > 318 && y < 36) { loadLevel(levelIdx); return; }
+  pointerDown = true; holdAt(x, y);
+});
+addEventListener('pointermove', e => { if (pointerDown) { const [x, y] = local(e); holdAt(x, y); } });
+addEventListener('pointerup', () => { pointerDown = false; held = -1; });
+addEventListener('pointercancel', () => { pointerDown = false; held = -1; });
+addEventListener('keydown', e => { const k = '1234'.indexOf(e.key); if (k >= 0 && state === 'play') { held = k; everHeld = true; } });
+addEventListener('keyup', e => { if ('1234'.indexOf(e.key) >= 0) held = -1; });
+
+loadLevel(levelIdx);
+requestAnimationFrame(frame);
+
+// debug hooks for automated playtests
+window.__game = {
+  load: loadLevel, levels: LEVELS, mouth, hold: h => { held = state === 'play' ? h : -1; },
+  wanted: c => openBucket(c) >= 0,
+  info: () => ({ level: levelIdx, state, sandLeft, bar: barTotal, barCap, slots: slots.map(s => s && { col: s.col, got: s.got, size: s.size }) }),
+};
+</script>
+</body>
+</html>
