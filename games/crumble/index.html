@@ -5,9 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Crumble</title>
 <style>
-  html, body { margin: 0; height: 100%; background: #10131c; overflow: hidden; }
-  body { display: flex; align-items: center; justify-content: center; }
-  canvas { touch-action: none; display: block; border-radius: 14px; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body {
+    display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at 50% 30%, #222842 0%, #10131c 70%);
+  }
+  canvas {
+    touch-action: none; display: block; border-radius: 18px; -webkit-tap-highlight-color: transparent;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.06);
+    animation: enter 0.6s cubic-bezier(0.2, 1.3, 0.4, 1) both;
+  }
+  @keyframes enter { from { opacity: 0; transform: translateY(18px) scale(0.96); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { canvas { animation: none; } }
 </style>
 </head>
 <body>
@@ -27,6 +36,14 @@ const CY = BY + GH * CS + 11;      // two collector tubes under the picture
 const BAR = { x: 20, y: 118, w: 320, h: 30 };   // capacity bar, under the baskets
 const BARY = BAR.y + BAR.h / 2;
 const SPEED = 1000;                // sand speed inside the tube, px per second
+const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+
+// ---------- easing ----------
+const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
+const easeOutCubic = t => 1 - (1 - t) ** 3;
+const easeInCubic = t => t * t * t;
+const easeOutBack = t => { const c = 1.70158; return 1 + (c + 1) * (t - 1) ** 3 + c * (t - 1) ** 2; };
+const lerp = (a, b, t) => a + (b - a) * t;
 
 // ---------- level painting helpers ----------
 function painter() {
@@ -56,6 +73,7 @@ function painter() {
 // hidden: patches whose colour is covered until a patch touching them crumbles.
 const LEVELS = [
   { // popsicle
+    name: 'Popsicle', tip: 'Tap a shape to crumble it into the baskets',
     cap: 1, hint: [23, 40],
     pal: ['#ff6f91', '#ffd166', '#c98f5a'],
     solve: [[23, 40], [23, 28], [23, 10]],
@@ -66,6 +84,7 @@ const LEVELS = [
     }
   },
   { // mushroom
+    name: 'Mushroom', tip: 'Sand with no matching basket fills the storage bar',
     cap: 0.3, hint: [10, 41],
     pal: ['#ef4b4b', '#fff7ea', '#e8c08a', '#5ecb6b'],
     solve: [[10, 41], [23, 30], [8, 21], [14, 17], [25, 12], [34, 18]],
@@ -77,6 +96,7 @@ const LEVELS = [
     }
   },
   { // rainbow
+    name: 'Rainbow', tip: 'Watch the basket queue and plan ahead',
     cap: 0.22,
     pal: ['#ff5964', '#ff9f43', '#ffe14d', '#4cd97b', '#4aa8ff', '#a06bff', '#f4f7ff'],
     solve: [[23, 29], [23, 26], [7, 39], [40, 39], [23, 23], [23, 20], [23, 17], [23, 14]],
@@ -86,6 +106,7 @@ const LEVELS = [
     }
   },
   { // cactus: the pot is frozen
+    name: 'Cactus', tip: 'Frozen pieces thaw when a neighbour crumbles',
     cap: 0.3,
     pal: ['#4fbf6a', '#d9824f', '#ff7eb6'],
     solve: [[23, 20], [23, 38], [23, 8]],
@@ -99,6 +120,7 @@ const LEVELS = [
     }
   },
   { // burger
+    name: 'Burger', tip: 'Small pieces count too',
     cap: 0.2,
     pal: ['#e8a857', '#fff6dc', '#62c462', '#f0503c', '#ffd23f', '#7a4a2b'],
     solve: [[23, 34], [20, 29], [23, 24], [23, 22], [23, 19], [23, 15], [15, 10], [23, 8], [30, 11], [20, 13], [27, 14]],
@@ -113,6 +135,7 @@ const LEVELS = [
     }
   },
   { // balloons: two colours are covered
+    name: 'Balloons', tip: 'Hidden colours appear when a neighbour crumbles',
     cap: 0.25,
     pal: ['#ef4b4b', '#4aa8ff', '#ffd23f', '#f4f7ff', '#9a6238'],
     solve: [[20, 40], [10, 30], [24, 30], [38, 30], [10, 14], [24, 10], [38, 14]],
@@ -124,6 +147,7 @@ const LEVELS = [
     }
   },
   { // house
+    name: 'House', tip: 'The last one. Take your time',
     cap: 0.2,
     pal: ['#58c063', '#ffd972', '#9a6238', '#6ec3ff', '#e9524a', '#ffb347'],
     solve: [[10, 43], [7, 28], [9, 31], [23, 31], [16, 36], [38, 35], [39, 23], [16, 20], [24, 14], [41, 6]],
@@ -147,12 +171,20 @@ const off = document.createElement('canvas'); off.width = GW; off.height = GH;
 const octx = off.getContext('2d'); const img = octx.createImageData(GW, GH);
 
 let kind, col, reg, shade, pend;      // per-cell arrays
-let pal, palRGB, slots, queue, bar, barOrder, barTotal, barCap, regions, state, stateT, tick, taps;
-let grains = [], confetti = [], levelIdx = 0, now = 0, lastT = 0;
+let pal, palRGB, palDark, palLight, slots, queue, bar, barOrder, barTotal, barCap, regions, state, stateT, tick, taps;
+let grains = [], levelIdx = 0, now = 0, lastT = 0, frameDt = 0.016;
+// visual-only state (never affects gameplay)
+let parts = [], rings = [], leaving = [], shake = 0, flash = null, levelBorn = 0, barDisp, barSeen = [];
+let hover = null, press = { id: null, t: -1e9 }, spinT = -1e9;
+const reduceMotion = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
 try { levelIdx = Math.min(LEVELS.length - 1, parseInt(localStorage.getItem('crumble_lvl') || '0', 10) || 0); } catch (e) {}
 
 function hexRGB(h) { const n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
-function newBucket(q) { return q ? { col: q.col, size: q.size, got: 0, arr: 0, born: now, closing: 0 } : null; }
+function rgbStr(c, f) {          // f < 0 darkens, f > 0 lightens
+  const t = f < 0 ? 0 : 255, k = Math.abs(f);
+  return `rgb(${Math.round(c[0] + (t - c[0]) * k)},${Math.round(c[1] + (t - c[1]) * k)},${Math.round(c[2] + (t - c[2]) * k)})`;
+}
+function newBucket(q) { return q ? { col: q.col, size: q.size, got: 0, arr: 0, born: now, closing: 0, disp: 0, bump: -1e9 } : null; }
 
 function loadLevel(i) {
   levelIdx = i; const L = LEVELS[i];
@@ -162,6 +194,7 @@ function loadLevel(i) {
   kind = new Uint8Array(N); col = new Uint8Array(N); reg = new Int16Array(N).fill(-1);
   shade = new Int8Array(N); pend = new Float64Array(N);
   pal = L.pal; palRGB = pal.map(hexRGB);
+  palDark = palRGB.map(c => rgbStr(c, -0.28)); palLight = palRGB.map(c => rgbStr(c, 0.45));
   let sum = 0;
   for (let j = 0; j < GW * PH; j++) if (p.g[j]) { kind[j] = SOLID; col[j] = p.g[j]; sum++; }
   // connected patches (4-neighbour, same colour)
@@ -200,7 +233,11 @@ function loadLevel(i) {
   for (const r of runs) { const k = Math.ceil(r.n / BMAX); for (let b = 0; b < k; b++) queue.push({ col: r.col, size: Math.floor(r.n / k) + (b < r.n % k ? 1 : 0) }); }
   slots = []; for (let k = 0; k < NSLOT; k++) slots.push(newBucket(queue.shift()));
   bar = new Int32Array(pal.length + 1); barOrder = []; barTotal = 0; barCap = Math.max(40, Math.round(sum * L.cap));
-  grains = []; confetti = []; state = 'play'; stateT = now; tick = 0; taps = 0;
+  grains = []; state = 'play'; stateT = now; tick = 0; taps = 0;
+  // visuals: staggered basket entrance, picture build-in, clean effects
+  slots.forEach((s, k) => { if (s) s.born = now + 120 + k * 90; });
+  parts = []; rings = []; leaving = []; shake = 0; flash = null; levelBorn = now;
+  barDisp = new Float32Array(pal.length + 1); barSeen = [];
 }
 
 // ---------- audio (tiny, optional) ----------
@@ -215,6 +252,36 @@ function blip(f0, f1, dur, type = 'sine', vol = 0.12) {
 }
 function grainTick() { if (now - lastTick < 45) return; lastTick = now; blip(1800 + Math.random() * 1400, 900, 0.03, 'triangle', 0.025); }
 
+// ---------- effects (visual only) ----------
+function spawn(p) { if (parts.length < 700) parts.push(p); }
+function burst(x, y, c, n, o = {}) {
+  for (let i = 0; i < n; i++) {
+    const a = o.angle !== undefined ? o.angle + (Math.random() - 0.5) * (o.spread || 1) : Math.random() * Math.PI * 2;
+    const v = (o.spd || 120) * (0.4 + Math.random() * 0.8);
+    spawn({
+      x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, g: o.g ?? 300, drag: o.drag ?? 2,
+      life: 0, max: (o.life || 0.6) * (0.7 + Math.random() * 0.6), size: (o.size || 3) * (0.6 + Math.random() * 0.8),
+      c: Array.isArray(c) ? c[(Math.random() * c.length) | 0] : c, shape: o.shape || 'sq', rot: Math.random() * 6, vr: (Math.random() - 0.5) * 14,
+    });
+  }
+}
+function ring(x, y, c, r0, r1, dur, w = 3) { rings.push({ x, y, c, r0, r1, dur, w, t0: now }); }
+function addShake(m) { if (!reduceMotion) shake = Math.max(shake, m); }
+function cellXY(c) { return [BX + (c % GW + 0.5) * CS, BY + (((c / GW) | 0) + 0.5) * CS]; }
+
+function updateFx(dt) {
+  const live = parts; parts = [];
+  for (const p of live) {
+    p.life += dt; if (p.life >= p.max) continue;
+    const dr = Math.exp(-p.drag * dt); p.vx *= dr; p.vy *= dr; p.vy += p.g * dt;
+    p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.vr * dt;
+    if (p.y < VH + 40) parts.push(p);
+  }
+  rings = rings.filter(r => now - r.t0 < r.dur);
+  leaving = leaving.filter(b => now - b.t0 < 340);
+  shake *= Math.exp(-dt * 11); if (shake < 0.05) shake = 0;
+}
+
 // ---------- game logic ----------
 function slotPos(k) { return { x: 22 + k * 82, y: 44, w: 66, h: 64 }; }
 function openBucket(c) { return slots.findIndex(s => s && s.col === c && !s.closing && s.got < s.size); }
@@ -227,9 +294,15 @@ function collect(c, x) {
 
 function toBucket(k, x, y) {     // one grain hops from the bar level into basket k
   const s = slots[k], p = slotPos(k); s.got++;
-  grains.push({ c: s.col, hop: true, pts: [[x, y], [p.x + p.w / 2, p.y + p.h - 16]], seg: 0, x, y, ox: 0, oy: 0 });
+  const tx = p.x + p.w / 2 + (Math.random() - 0.5) * 20, ty = p.y + p.h - 16;
+  grains.push({ c: s.col, hop: true, s, pts: [[x, y], [tx, ty]], seg: 0, x, y, ox: 0, oy: 0, L: Math.max(1, Math.hypot(tx - x, ty - y)), arc: 14 + Math.random() * 16 });
   grainTick();
-  if (s.got >= s.size) { s.closing = now; blip(520, 1040, 0.16, 'sine', 0.16); if (navigator.vibrate) navigator.vibrate(18); }
+  if (s.got >= s.size) {
+    s.closing = now; blip(520, 1040, 0.16, 'sine', 0.16); if (navigator.vibrate) navigator.vibrate(18);
+    const cx = p.x + p.w / 2, cy = p.y + p.h / 2;
+    burst(cx, cy, ['#ffffff', pal[s.col - 1], palLight[s.col - 1]], 18, { spd: 170, g: 120, life: 0.6, size: 3.2, shape: 'spark' });
+    ring(cx, cy, pal[s.col - 1], 20, 52, 380, 4);
+  }
 }
 
 function arrive(c, x, y) {       // top of the tube: matching basket, or stay in the bar
@@ -237,7 +310,11 @@ function arrive(c, x, y) {       // top of the tube: matching basket, or stay in
   if (k >= 0) { toBucket(k, x, y); return; }
   if (!bar[c]) barOrder.push(c);
   bar[c]++; barTotal++;
-  if (barTotal > barCap && state === 'play') { state = 'fail'; stateT = now; blip(220, 70, 0.5, 'sawtooth', 0.12); if (navigator.vibrate) navigator.vibrate(120); }
+  if (barTotal > barCap && state === 'play') {
+    state = 'fail'; stateT = now; blip(220, 70, 0.5, 'sawtooth', 0.12); if (navigator.vibrate) navigator.vibrate(120);
+    addShake(9); flash = { c: '255,77,94', t0: now, dur: 450, a: 0.35 };
+    burst(BAR.x + BAR.w / 2, BARY, pal.slice(), 40, { spd: 260, g: 500, life: 0.9, size: 3.5 });
+  }
 }
 
 function drainBar() {            // stored sand leaves the bar when its basket shows up
@@ -265,6 +342,10 @@ function moveGrains(dt) {
     }
     if (g.seg < g.pts.length - 1) grains.push(g);
     else if (!g.hop) arrive(g.c, g.x, g.y);
+    else if (g.s) {               // landed in a basket: little squash + splash
+      g.s.bump = now; g.s.arr++;
+      if (Math.random() < 0.25) burst(g.x, g.y - 4, pal[g.c - 1], 1, { angle: -Math.PI / 2, spread: 2, spd: 70, g: 400, life: 0.35, size: 2.4 });
+    }
   }
 }
 
@@ -291,7 +372,13 @@ function step() {
 
 function crumble(regionId, cx, cy) {
   const r = regions[regionId]; if (!r || r.gone) return false;
-  if (r.ice) { r.flash = now; blip(1500, 1300, 0.07, 'square', 0.05); return false; }   // frozen: cannot be tapped yet
+  const sx = BX + (cx + 0.5) * CS, sy = BY + (cy + 0.5) * CS;
+  if (r.ice) {                   // frozen: cannot be tapped yet
+    r.flash = now; blip(1500, 1300, 0.07, 'square', 0.05);
+    r.wiggle = now; ring(sx, sy, 'rgba(200,236,255,0.9)', 6, 22, 260, 2);
+    burst(sx, sy, ['#e6f6ff', '#bfe6ff'], 5, { spd: 90, g: 200, life: 0.35, size: 2.5, shape: 'spark' });
+    return false;
+  }
   r.gone = true; r.hidden = false; taps++;
   for (const c of r.cells) {
     const x = c % GW, y = (c / GW) | 0;
@@ -299,11 +386,23 @@ function crumble(regionId, cx, cy) {
   }
   for (const n of r.adj) {       // patches touching this one thaw and uncover
     const o = regions[n]; if (o.gone) continue;
-    if (o.ice) { o.ice = false; o.flash = now; blip(900, 2400, 0.14, 'triangle', 0.12); }
-    if (o.hidden) { o.hidden = false; o.flash = now; blip(700, 1050, 0.1, 'sine', 0.1); }
+    const [mx, my] = cellXY(o.mark);
+    if (o.ice) {
+      o.ice = false; o.flash = now; blip(900, 2400, 0.14, 'triangle', 0.12);
+      burst(mx, my, ['#ffffff', '#d6f1ff', '#9fd8ff'], 22, { spd: 200, g: 420, life: 0.7, size: 3.2 });
+      ring(mx, my, 'rgba(200,236,255,0.95)', 8, 46, 420, 3);
+    }
+    if (o.hidden) {
+      o.hidden = false; o.flash = now; blip(700, 1050, 0.1, 'sine', 0.1);
+      burst(mx, my, ['#ffffff', pal[col[o.cells[0]] - 1]], 16, { spd: 150, g: 60, life: 0.7, size: 3, shape: 'spark' });
+      ring(mx, my, pal[col[o.cells[0]] - 1], 6, 40, 420, 3);
+    }
   }
   blip(160, 60, 0.22, 'triangle', 0.14);
   if (navigator.vibrate) navigator.vibrate(10);
+  const c0 = pal[col[r.cells[0]] - 1];
+  ring(sx, sy, c0, 4, 34, 420, 4); ring(sx, sy, 'rgba(255,255,255,0.8)', 2, 20, 280, 2);
+  addShake(Math.min(4, 1.5 + r.cells.length / 200));
   return true;
 }
 
@@ -321,29 +420,58 @@ function tapCell(gx, gy) {
 function update(dt) {
   let left = 0;
   for (let i = 0; i < GW * GH; i++) {
-    if (kind[i] === SOLID) { if (pend[i] && now >= pend[i]) { kind[i] = SAND; pend[i] = 0; shade[i] = (Math.random() * 36 - 18) | 0; } left++; }
+    if (kind[i] === SOLID) {
+      if (pend[i] && now >= pend[i]) {
+        kind[i] = SAND; pend[i] = 0; shade[i] = (Math.random() * 36 - 18) | 0;
+        if (Math.random() < 0.1) { const [px, py] = cellXY(i); burst(px, py, palLight[col[i] - 1], 1, { spd: 60, g: -20, drag: 3, life: 0.6, size: 3, shape: 'dot' }); }
+      }
+      left++;
+    }
     else if (kind[i] === SAND) left++;
   }
   step();
-  for (let k = 0; k < NSLOT; k++) if (slots[k] && slots[k].closing && now - slots[k].closing > 260) slots[k] = newBucket(queue.shift());
+  for (let k = 0; k < NSLOT; k++) if (slots[k] && slots[k].closing && now - slots[k].closing > 260) {
+    leaving.push({ k, col: slots[k].col, t0: now });
+    slots[k] = newBucket(queue.shift());
+  }
   drainBar();
   moveGrains(dt);
   if (state === 'play' && !left && !grains.length && barTotal === 0 && slots.every(s => !s)) {
     state = 'win'; stateT = now;
-    blip(520, 780, 0.12); setTimeout(() => blip(780, 1170, 0.2), 110);
-    for (let k = 0; k < 90; k++) confetti.push({ x: VW / 2, y: 320, vx: (Math.random() - 0.5) * 9, vy: -Math.random() * 10 - 2, c: pal[k % pal.length], r: Math.random() * 6 });
+    blip(520, 780, 0.12); setTimeout(() => blip(780, 1170, 0.2), 110); setTimeout(() => blip(1040, 1560, 0.25), 240);
+    flash = { c: '255,255,255', t0: now, dur: 380, a: 0.25 };
+    const cols = pal.concat(['#ffffff']);
+    burst(VW / 2, 330, cols, 70, { spd: 520, g: 520, drag: 1.4, life: 2.4, size: 4.5, shape: 'conf' });
+    burst(10, 600, cols, 35, { angle: -Math.PI / 3, spread: 0.7, spd: 780, g: 520, drag: 1.4, life: 2.6, size: 4.5, shape: 'conf' });
+    burst(VW - 10, 600, cols, 35, { angle: -Math.PI * 2 / 3, spread: 0.7, spd: 780, g: 520, drag: 1.4, life: 2.6, size: 4.5, shape: 'conf' });
   }
+  updateFx(dt);
 }
 
 // ---------- rendering ----------
 function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function text(s, x, y, size, colr, weight = 700, align = 'center') {
+  ctx.font = `${weight} ${size}px ${FONT}`; ctx.textAlign = align; ctx.textBaseline = 'middle'; ctx.fillStyle = colr; ctx.fillText(s, x, y);
+}
+
+const BOKEH = Array.from({ length: 9 }, (_, i) => ({ x: (i * 97) % VW, y: (i * 173) % VH, r: 30 + (i * 37) % 60, s: 0.3 + (i % 4) * 0.15, p: i * 1.7 }));
+function drawBackground() {
+  const bg = ctx.createLinearGradient(0, 0, 0, VH); bg.addColorStop(0, '#2d3556'); bg.addColorStop(1, '#1a1f33');
+  ctx.fillStyle = bg; ctx.fillRect(-20, -20, VW + 40, VH + 40);
+  for (const b of BOKEH) {
+    const t = now / 1000 * b.s + b.p, x = b.x + Math.sin(t) * 18, y = b.y + Math.cos(t * 0.8) * 22;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, b.r);
+    g.addColorStop(0, 'rgba(140,160,255,0.07)'); g.addColorStop(1, 'rgba(140,160,255,0)');
+    ctx.fillStyle = g; ctx.fillRect(x - b.r, y - b.r, b.r * 2, b.r * 2);
+  }
+}
 
 function drawBoard() {
-  const d = img.data;
+  const d = img.data, age = now - levelBorn;
   for (let i = 0; i < GW * GH; i++) {
     const o = i * 4, k = kind[i];
     if (k === EMPTY) { d[o + 3] = 0; continue; }
-    let c = palRGB[col[i] - 1], m = 1, w = 0;
+    let c = palRGB[col[i] - 1], m = 1, w = 0, a = 1;
     if (k === SAND) m = 1 + shade[i] / 100;
     else {
       const x = i % GW, y = (i / GW) | 0, R = regions[reg[i]];
@@ -351,24 +479,50 @@ function drawBoard() {
       if (below < 0 || kind[below] !== SOLID || reg[below] !== reg[i] || right < 0 || kind[right] !== SOLID || reg[right] !== reg[i]) m = 0.86;
       else if (i - GW < 0 || kind[i - GW] !== SOLID || reg[i - GW] !== reg[i]) m = 1.08;
       if (R.hidden) c = (x + y) & 1 ? [98, 108, 132] : [88, 98, 122];                 // covered: colour unknown
-      else if (R.ice) { const s = (x + y) % 6 === 0 ? 0.85 : 0.6; c = [c[0] + (205 - c[0]) * s, c[1] + (236 - c[1]) * s, c[2] + (255 - c[2]) * s]; }
-      if (pend[i]) w = 0.55; else if (now - R.flash < 220) w = 0.6 * (1 - (now - R.flash) / 220);
+      else if (R.ice) {
+        const sh = (x + y + ((now / 90) | 0)) % 14 === 0 ? 0.92 : (x + y) % 6 === 0 ? 0.85 : 0.6;
+        c = [c[0] + (205 - c[0]) * sh, c[1] + (236 - c[1]) * sh, c[2] + (255 - c[2]) * sh];
+      }
+      if (pend[i]) w = 0.25 + 0.5 * clamp01(1 - (pend[i] - now) / 480);                // brightens just before it crumbles
+      else if (now - R.flash < 260) w = 0.65 * (1 - (now - R.flash) / 260);
+      // build-in: the picture assembles from the top when a level starts
+      if (age < 700) {
+        const t = clamp01((age - (y * 8 + ((x * 7 + y * 13) % 11) * 10)) / 160);
+        a = t; w = Math.max(w, (1 - t) * 0.8);
+      }
     }
     d[o] = Math.min(255, c[0] * m + (255 - c[0] * m) * w); d[o + 1] = Math.min(255, c[1] * m + (255 - c[1] * m) * w);
-    d[o + 2] = Math.min(255, c[2] * m + (255 - c[2] * m) * w); d[o + 3] = 255;
+    d[o + 2] = Math.min(255, c[2] * m + (255 - c[2] * m) * w); d[o + 3] = 255 * a;
   }
   octx.putImageData(img, 0, 0);
-  ctx.fillStyle = '#171b28'; rr(BX - 1, BY - 1, GW * CS + 2, GH * CS + 2, 6); ctx.fill();
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = 18; ctx.shadowOffsetY = 6;
+  ctx.fillStyle = '#161a27'; rr(BX - 3, BY - 3, GW * CS + 6, GH * CS + 6, 10); ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1; rr(BX - 2.5, BY - 2.5, GW * CS + 5, GH * CS + 5, 9.5); ctx.stroke();
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(off, BX, BY, GW * CS, GH * CS);
   // icons on special patches
   for (const r of regions) {
     if (r.gone || (!r.ice && !r.hidden)) continue;
     const px = BX + (r.mark % GW + 0.5) * CS, py = BY + (((r.mark / GW) | 0) + 0.5) * CS;
-    if (r.hidden) { ctx.fillStyle = 'rgba(255,255,255,0.92)'; ctx.font = 'bold 22px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('?', px, py + 1); }
-    else {
+    let wx = 0;
+    if (r.wiggle && now - r.wiggle < 300) { const t = (now - r.wiggle) / 300; wx = Math.sin(t * Math.PI * 6) * 4 * (1 - t); }
+    if (r.hidden) {
+      const by = Math.sin(now / 380 + r.mark) * 2;
+      ctx.beginPath(); ctx.arc(px, py + by, 12, 0, 7); ctx.fillStyle = 'rgba(20,24,38,0.35)'; ctx.fill();
+      text('?', px, py + by + 1, 18, 'rgba(255,255,255,0.95)', 800);
+    } else {
+      ctx.save(); ctx.translate(px + wx, py); ctx.rotate(Math.sin(now / 900) * 0.25);
       ctx.strokeStyle = 'rgba(255,255,255,0.95)'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
-      for (let a = 0; a < 3; a++) { const an = a * Math.PI / 3; ctx.beginPath(); ctx.moveTo(px - Math.cos(an) * 9, py - Math.sin(an) * 9); ctx.lineTo(px + Math.cos(an) * 9, py + Math.sin(an) * 9); ctx.stroke(); }
+      for (let a = 0; a < 3; a++) {
+        const an = a * Math.PI / 3; ctx.beginPath(); ctx.moveTo(-Math.cos(an) * 9, -Math.sin(an) * 9); ctx.lineTo(Math.cos(an) * 9, Math.sin(an) * 9); ctx.stroke();
+        for (const sgn of [-1, 1]) {   // little branches on the snowflake
+          const ex = Math.cos(an) * 6 * sgn, ey = Math.sin(an) * 6 * sgn;
+          ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(ex + Math.cos(an + 2.2 * sgn) * 3, ey + Math.sin(an + 2.2 * sgn) * 3); ctx.stroke();
+        }
+      }
+      ctx.restore();
     }
   }
 }
@@ -380,54 +534,153 @@ function drawTube() {
   ctx.lineJoin = 'round'; ctx.lineCap = 'round';
   tubePath(); ctx.strokeStyle = '#4a5478'; ctx.lineWidth = 11; ctx.stroke();
   tubePath(); ctx.strokeStyle = '#12151f'; ctx.lineWidth = 8; ctx.stroke();
+  // moving sheen inside the tube while sand flows
+  const flow = grains.some(g => !g.hop);
+  ctx.save(); tubePath(); ctx.setLineDash([10, 22]); ctx.lineDashOffset = -now / (flow ? 8 : 40);
+  ctx.strokeStyle = `rgba(160,180,255,${flow ? 0.13 : 0.04})`; ctx.lineWidth = 4; ctx.stroke(); ctx.restore();
   ctx.fillStyle = '#4a5478'; ctx.fillRect(VW / 2 - 1.5, CY - 5.5, 3, 11);   // split between the two bottom tubes
 }
 function drawGrains() {
-  for (const g of grains) { ctx.fillStyle = pal[g.c - 1]; ctx.fillRect(g.x + g.ox - 1.5, g.y + g.oy - 1.5, 3, 3); }
+  for (const g of grains) {
+    let x = g.x + g.ox, y = g.y + g.oy;
+    if (g.hop) {               // hopping grains fly on an arc
+      const rem = Math.hypot(g.pts[1][0] - g.x, g.pts[1][1] - g.y), p = clamp01(1 - rem / g.L);
+      y -= Math.sin(p * Math.PI) * g.arc;
+    }
+    ctx.fillStyle = pal[g.c - 1]; ctx.fillRect(x - 1.5, y - 1.5, 3, 3);
+    ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.fillRect(x - 1.5, y - 1.5, 1.5, 1.5);
+  }
 }
 
 function bucketShape(w, h) { ctx.beginPath(); ctx.moveTo(2, 6); ctx.lineTo(w - 2, 6); ctx.lineTo(w - 9, h - 6); ctx.quadraticCurveTo(w - 10, h, w - 16, h); ctx.lineTo(16, h); ctx.quadraticCurveTo(10, h, 9, h - 6); ctx.closePath(); }
 
-function drawBucket(k) {
-  const p = slotPos(k), s = slots[k];
-  let sc = 1, alpha = 1;
-  if (s) {
-    sc = 0.85 + 0.15 * Math.min(1, (now - s.born) / 160);
-    if (s.closing) { const t = (now - s.closing) / 260; sc = 1 + Math.sin(t * Math.PI) * 0.16; alpha = t > 0.6 ? Math.max(0, 1 - (t - 0.6) / 0.4) : 1; }
-  }
-  ctx.save(); ctx.translate(p.x + p.w / 2, p.y + p.h / 2); ctx.scale(sc, sc); ctx.translate(-p.w / 2, -p.h / 2); ctx.globalAlpha = alpha;
-  bucketShape(p.w, p.h); ctx.fillStyle = s ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.04)'; ctx.fill();
-  if (s) {
-    const f = Math.min(1, s.got / s.size), fh = (p.h - 8) * f;
-    ctx.save(); bucketShape(p.w, p.h); ctx.clip();
-    ctx.globalAlpha = alpha * 0.22; ctx.fillStyle = pal[s.col - 1]; ctx.fillRect(0, 0, p.w, p.h);   // tint shows the wanted colour
-    ctx.globalAlpha = alpha; ctx.fillRect(0, p.h - fh, p.w, fh);
-    ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.fillRect(0, p.h - fh, p.w, 3);
-    ctx.restore();
-  }
-  bucketShape(p.w, p.h); ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.strokeStyle = s ? pal[s.col - 1] : 'rgba(255,255,255,0.18)';
-  if (!s) ctx.setLineDash([5, 5]); ctx.stroke(); ctx.setLineDash([]);
+function drawCheck(cx, cy, r, sc, c) {
+  ctx.save(); ctx.translate(cx, cy); ctx.scale(sc, sc);
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fillStyle = '#fff'; ctx.fill();
+  ctx.strokeStyle = c; ctx.lineWidth = r * 0.3; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.moveTo(-r * 0.45, 0); ctx.lineTo(-r * 0.1, r * 0.35); ctx.lineTo(r * 0.5, -r * 0.35); ctx.stroke();
   ctx.restore();
 }
 
-function drawQueue() {           // small preview of the next buckets
+function bucketBody(w, h, ci, fill, wave) {
+  const c = pal[ci - 1];
+  bucketShape(w, h); ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fill();
+  ctx.save(); bucketShape(w, h); ctx.clip();
+  ctx.globalAlpha *= 0.22; ctx.fillStyle = c; ctx.fillRect(0, 0, w, h); ctx.globalAlpha /= 0.22;   // tint shows the wanted colour
+  if (fill > 0.002) {
+    const top = h - (h - 8) * fill, ph = now * 0.009;
+    ctx.beginPath(); ctx.moveTo(0, h);
+    for (let x = 0; x <= w; x += 3) ctx.lineTo(x, top + Math.sin(x * 0.22 + ph) * wave);
+    ctx.lineTo(w, h); ctx.closePath();
+    const gr = ctx.createLinearGradient(0, top, 0, h); gr.addColorStop(0, c); gr.addColorStop(1, palDark[ci - 1]);
+    ctx.fillStyle = gr; ctx.fill();
+    ctx.beginPath();
+    for (let x = 0; x <= w; x += 3) ctx.lineTo(x, top + 1 + Math.sin(x * 0.22 + ph) * wave);
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 2; ctx.stroke();
+  }
+  ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.beginPath(); ctx.moveTo(8, 10); ctx.lineTo(14, 10); ctx.lineTo(19, h - 8); ctx.lineTo(15, h - 8); ctx.fill();  // gloss
+  ctx.restore();
+  bucketShape(w, h); ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.strokeStyle = c; ctx.stroke();
+  rr(-1, 2, w + 2, 6, 3); ctx.fillStyle = c; ctx.fill();                               // rim
+  rr(-1, 2, w + 2, 2.5, 2); ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fill();
+}
+
+function drawBucket(k) {
+  const p = slotPos(k), s = slots[k];
+  if (!s) {                      // empty slot
+    ctx.save(); ctx.translate(p.x, p.y); ctx.globalAlpha = 0.6 + 0.2 * Math.sin(now / 500 + k);
+    bucketShape(p.w, p.h); ctx.fillStyle = 'rgba(255,255,255,0.03)'; ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.16)'; ctx.setLineDash([5, 5]); ctx.lineDashOffset = -now / 60; ctx.stroke(); ctx.setLineDash([]);
+    ctx.restore(); return;
+  }
+  s.disp += (s.got / s.size - s.disp) * Math.min(1, frameDt * 12);
+  // entrance: slide in from the queue preview with an overshoot
+  const tb = clamp01((now - s.born) / 380), e = easeOutBack(tb);
+  if (tb <= 0) return;
+  const qx = 287, qy = 56;
+  let cx = lerp(qx, p.x + p.w / 2, e), cy = lerp(qy, p.y + p.h / 2, e) - Math.sin(tb * Math.PI) * 14;
+  let sx = lerp(0.35, 1, e), sy = sx, alpha = Math.min(1, tb * 3);
+  // squash when grains land
+  const bt = (now - s.bump) / 160;
+  if (bt < 1) { const q = Math.sin(bt * Math.PI) * 0.05; sx *= 1 + q; sy *= 1 - q; }
+  // completion pop
+  let ct = -1;
+  if (s.closing) { ct = clamp01((now - s.closing) / 260); const q = Math.sin(ct * Math.PI) * 0.16; sx *= 1 + q; sy *= 1 + q; }
+  ctx.save(); ctx.translate(cx, cy + p.h / 2); ctx.scale(sx, sy); ctx.translate(-p.w / 2, -p.h); ctx.globalAlpha = alpha;
+  if (ct >= 0) { ctx.shadowColor = pal[s.col - 1]; ctx.shadowBlur = 20 * Math.sin(ct * Math.PI); }
+  const wave = 1 + Math.max(0, 1 - (now - s.bump) / 300) * 1.5;
+  bucketBody(p.w, p.h, s.col, s.disp, wave);
+  ctx.shadowBlur = 0;
+  if (ct >= 0) drawCheck(p.w / 2, p.h / 2 + 4, 13, easeOutBack(clamp01(ct * 1.6)), pal[s.col - 1]);
+  ctx.restore();
+}
+
+function drawLeaving() {         // finished baskets float away
+  for (const b of leaving) {
+    const p = slotPos(b.k), t = clamp01((now - b.t0) / 340), e = easeInCubic(t);
+    ctx.save(); ctx.globalAlpha = 1 - t;
+    ctx.translate(p.x + p.w / 2, p.y + p.h / 2 - e * 40); ctx.scale(1 + t * 0.15, 1 + t * 0.15); ctx.translate(-p.w / 2, -p.h / 2);
+    bucketBody(p.w, p.h, b.col, 1, 1);
+    drawCheck(p.w / 2, p.h / 2 + 4, 13, 1, pal[b.col - 1]);
+    ctx.restore();
+  }
+}
+
+function drawQueue() {           // small preview of the next buckets, sliding along as they are used
+  text('NEXT', 291, 40, 7, 'rgba(255,255,255,0.4)', 800);
   for (let i = 0; i < Math.min(6, queue.length); i++) {
-    const x = 276 + (i % 2) * 30, y = 48 + ((i / 2) | 0) * 21;
-    ctx.fillStyle = pal[queue[i].col - 1]; ctx.globalAlpha = 1 - i * 0.1; rr(x, y, 22, 15, 5); ctx.fill();
+    const q = queue[i], tx = 276 + (i % 2) * 30, ty = 48 + ((i / 2) | 0) * 21;
+    if (q.vx === undefined) { q.vx = tx + 20; q.vy = ty; q.va = 0; }
+    const f = Math.min(1, frameDt * 12);
+    q.vx += (tx - q.vx) * f; q.vy += (ty - q.vy) * f; q.va += (1 - i * 0.12 - q.va) * f;
+    ctx.globalAlpha = Math.max(0, q.va);
+    rr(q.vx, q.vy, 22, 15, 5); ctx.fillStyle = pal[q.col - 1]; ctx.fill();
+    rr(q.vx, q.vy, 22, 5, [5, 5, 0, 0]); ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.fill();
   }
   ctx.globalAlpha = 1;
 }
 
 function drawBar() {
-  const b = BAR, f = barTotal / barCap, danger = f > 0.7;
-  rr(b.x, b.y, b.w, b.h, 10); ctx.fillStyle = '#171b28'; ctx.fill();
+  const b = BAR, f = Math.min(1, barTotal / barCap);
+  for (const c of barOrder) if (!barSeen.includes(c)) barSeen.push(c);
+  const k = Math.min(1, frameDt * 16); let dispTotal = 0;
+  for (let c = 1; c < barDisp.length; c++) { barDisp[c] += (bar[c] - barDisp[c]) * k; dispTotal += barDisp[c]; }
+  barSeen = barSeen.filter(c => bar[c] > 0 || barDisp[c] > 0.3);
+  const df = dispTotal / barCap, danger = f > 0.7;
+  let jx = 0;
+  if (f > 0.85 && state === 'play' && !reduceMotion) jx = Math.sin(now / 25) * 1.2 * (f - 0.85) / 0.15;
+  ctx.save(); ctx.translate(jx, 0);
+  if (danger) { ctx.shadowColor = 'rgba(255,77,94,0.8)'; ctx.shadowBlur = 10 + 8 * Math.sin(now / 120); }
+  rr(b.x, b.y, b.w, b.h, 10); ctx.fillStyle = '#151927'; ctx.fill();
+  ctx.shadowBlur = 0;
+  // inner tick marks
+  ctx.fillStyle = 'rgba(255,255,255,0.05)';
+  for (let i = 1; i < 10; i++) ctx.fillRect(b.x + b.w * i / 10, b.y + 6, 1, b.h - 12);
   ctx.save(); rr(b.x, b.y, b.w, b.h, 10); ctx.clip();
   let x = b.x;
-  for (const c of barOrder) { const w = bar[c] / barCap * b.w; ctx.fillStyle = pal[c - 1]; ctx.fillRect(x, b.y, w + 0.5, b.h); x += w; }
-  ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(b.x, b.y, x - b.x, 5);
+  for (const c of barSeen) {
+    const w = Math.max(0, barDisp[c]) / barCap * b.w; if (w < 0.2) continue;
+    const gr = ctx.createLinearGradient(0, b.y, 0, b.y + b.h); gr.addColorStop(0, pal[c - 1]); gr.addColorStop(1, palDark[c - 1]);
+    ctx.fillStyle = gr; ctx.fillRect(x, b.y, w + 0.5, b.h);
+    ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(x + w - 0.5, b.y, 1, b.h);
+    x += w;
+  }
+  if (x > b.x + 1) {
+    ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.fillRect(b.x, b.y + 3, x - b.x, 4);
+    const sh = ((now / 1400) % 1) * (b.w + 80) - 40;              // travelling shine
+    const g = ctx.createLinearGradient(b.x + sh - 30, 0, b.x + sh + 30, 0);
+    g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.5, 'rgba(255,255,255,0.18)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g; ctx.fillRect(b.x, b.y, x - b.x, b.h);
+  }
   ctx.restore();
-  rr(b.x, b.y, b.w, b.h, 10); ctx.lineWidth = 3;
-  ctx.strokeStyle = danger ? `rgba(255,77,94,${0.6 + 0.4 * Math.sin(now / 90)})` : 'rgba(255,255,255,0.28)'; ctx.stroke();
+  rr(b.x, b.y, b.w, b.h, 10); ctx.lineWidth = 2.5;
+  ctx.strokeStyle = danger ? `rgba(255,77,94,${0.6 + 0.4 * Math.sin(now / 90)})` : 'rgba(255,255,255,0.22)'; ctx.stroke();
+  // label
+  const pct = Math.round(Math.min(1, df) * 100);
+  ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 4;
+  text(pct ? pct + '%' : 'STORAGE', b.x + b.w - 10, BARY + 1, pct ? 12 : 9, danger ? '#ffd6db' : 'rgba(255,255,255,0.55)', 800, 'right');
+  ctx.restore();
+  ctx.restore();
 }
 
 function iconRestart(cx, cy, r, colr) {
@@ -437,65 +690,168 @@ function iconRestart(cx, cy, r, colr) {
   ctx.fillStyle = colr; ctx.beginPath(); ctx.moveTo(ax + r * 0.5, ay + r * 0.1); ctx.lineTo(ax - r * 0.25, ay - r * 0.55); ctx.lineTo(ax - r * 0.3, ay + r * 0.4); ctx.fill();
 }
 
-function drawLevelButton(x, label, direction, enabled) {
-  rr(x, 8, 48, 28, 8);
-  ctx.fillStyle = enabled ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)';
-  ctx.fill();
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = enabled ? 'rgba(255,255,255,0.38)' : 'rgba(255,255,255,0.12)';
-  ctx.stroke();
-  ctx.fillStyle = enabled ? '#fff' : 'rgba(255,255,255,0.35)';
-  ctx.font = 'bold 8px sans-serif';
-  ctx.textAlign = direction < 0 ? 'right' : 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(label, direction < 0 ? x + 40 : x + 8, 22);
-  ctx.beginPath();
-  if (direction < 0) {
-    ctx.moveTo(x + 10, 16); ctx.lineTo(x + 6, 22); ctx.lineTo(x + 10, 28);
-  } else {
-    ctx.moveTo(x + 38, 16); ctx.lineTo(x + 42, 22); ctx.lineTo(x + 38, 28);
+// ---------- top bar ----------
+const BTN = { prev: { x: 26, y: 22 }, next: { x: 294, y: 22 }, restart: { x: 336, y: 22 } };
+function btnEnabled(id) { return id === 'prev' ? levelIdx > 0 : id === 'next' ? levelIdx < LEVELS.length - 1 : true; }
+function hitButton(x, y) {
+  if (y < 4 || y > 42) return null;
+  if (Math.abs(x - BTN.prev.x) <= 20) return 'prev';
+  if (Math.abs(x - BTN.next.x) <= 20) return 'next';
+  if (x >= 316) return 'restart';
+  return null;
+}
+function drawRoundBtn(id, icon) {
+  const b = BTN[id], en = btnEnabled(id);
+  let s = en && hover === id ? 1.08 : 1;
+  if (press.id === id) { const t = clamp01((now - press.t) / 240); s *= 1 - 0.16 * Math.sin(t * Math.PI); }
+  ctx.save(); ctx.translate(b.x, b.y); ctx.scale(s, s);
+  ctx.beginPath(); ctx.arc(0, 0, 15, 0, 7);
+  ctx.fillStyle = !en ? 'rgba(255,255,255,0.04)' : hover === id ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.11)'; ctx.fill();
+  ctx.lineWidth = 1.5; ctx.strokeStyle = en ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.08)'; ctx.stroke();
+  icon(en ? '#fff' : 'rgba(255,255,255,0.25)');
+  ctx.restore();
+}
+function drawTopBar() {
+  drawRoundBtn('prev', c => { ctx.strokeStyle = c; ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.beginPath(); ctx.moveTo(2, -6); ctx.lineTo(-4, 0); ctx.lineTo(2, 6); ctx.stroke(); });
+  drawRoundBtn('next', c => { ctx.strokeStyle = c; ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.beginPath(); ctx.moveTo(-2, -6); ctx.lineTo(4, 0); ctx.lineTo(-2, 6); ctx.stroke(); });
+  drawRoundBtn('restart', c => { ctx.rotate(-easeOutCubic(clamp01((now - spinT) / 500)) * Math.PI * 2); iconRestart(0, 0, 7, c); });
+  // title + progress dots
+  const tIn = easeOutCubic(clamp01((now - levelBorn) / 400));
+  ctx.save(); ctx.globalAlpha = tIn; ctx.translate(0, (1 - tIn) * -6);
+  text(`LEVEL ${levelIdx + 1}`, 160, 13, 12, '#ffffff', 800);
+  text(LEVELS[levelIdx].name.toUpperCase(), 160, 25, 8, 'rgba(255,255,255,0.5)', 700);
+  ctx.restore();
+  const n = LEVELS.length, x0 = 160 - (n - 1) * 7;
+  for (let i = 0; i < n; i++) {
+    const x = x0 + i * 14, cur = i === levelIdx;
+    const r = cur ? 4 + Math.sin(now / 300) * 0.6 : 2.6;
+    if (cur) { ctx.beginPath(); ctx.arc(x, 36, r + 3, 0, 7); ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.fill(); }
+    ctx.beginPath(); ctx.arc(x, 36, r, 0, 7);
+    ctx.fillStyle = i < levelIdx ? '#7fe3a0' : cur ? '#ffffff' : 'rgba(255,255,255,0.22)'; ctx.fill();
   }
-  ctx.stroke();
+}
+
+function drawRings() {
+  for (const r of rings) {
+    const t = clamp01((now - r.t0) / r.dur), e = easeOutCubic(t);
+    ctx.globalAlpha = 1 - t; ctx.strokeStyle = r.c; ctx.lineWidth = r.w * (1 - t * 0.6);
+    ctx.beginPath(); ctx.arc(r.x, r.y, lerp(r.r0, r.r1, e), 0, 7); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawParts() {
+  for (const p of parts) {
+    const k = 1 - p.life / p.max;
+    ctx.globalAlpha = p.shape === 'conf' ? Math.min(1, k * 3) : k; ctx.fillStyle = p.c;
+    if (p.shape === 'conf') {
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.scale(1, Math.cos(p.rot * 1.7));
+      ctx.fillRect(-p.size, -p.size * 0.6, p.size * 2, p.size * 1.2); ctx.restore();
+    } else if (p.shape === 'spark') {
+      const s = p.size * (0.4 + k * 0.8);
+      ctx.beginPath(); ctx.moveTo(p.x, p.y - s * 1.6); ctx.lineTo(p.x + s * 0.35, p.y - s * 0.35); ctx.lineTo(p.x + s * 1.6, p.y);
+      ctx.lineTo(p.x + s * 0.35, p.y + s * 0.35); ctx.lineTo(p.x, p.y + s * 1.6); ctx.lineTo(p.x - s * 0.35, p.y + s * 0.35);
+      ctx.lineTo(p.x - s * 1.6, p.y); ctx.lineTo(p.x - s * 0.35, p.y - s * 0.35); ctx.fill();
+    } else if (p.shape === 'dot') {
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (0.3 + 0.7 * k), 0, 7); ctx.fill();
+    } else {
+      const s = p.size * (0.5 + 0.5 * k); ctx.fillRect(p.x - s / 2, p.y - s / 2, s, s);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawHint() {
+  const L = LEVELS[levelIdx];
+  if (!(L.hint && taps === 0 && state === 'play' && now - levelBorn > 700)) return;
+  const hx = BX + (L.hint[0] + 0.5) * CS, hy = BY + (L.hint[1] + 0.5) * CS;
+  for (let j = 0; j < 2; j++) {
+    const t = ((now + j * 550) % 1100) / 1100;
+    ctx.strokeStyle = `rgba(255,255,255,${(1 - t) * 0.9})`; ctx.lineWidth = 3 * (1 - t) + 1;
+    ctx.beginPath(); ctx.arc(hx, hy, 8 + easeOutCubic(t) * 24, 0, 7); ctx.stroke();
+  }
+  const t = (now % 1100) / 1100, pr = Math.sin(t * Math.PI);
+  ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.beginPath(); ctx.arc(hx, hy, 8 - pr * 2, 0, 7); ctx.fill();
+  // label bubble
+  const by = hy - 38 + Math.sin(now / 260) * 3;
+  ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.3)'; ctx.shadowBlur = 8;
+  rr(hx - 22, by - 11, 44, 22, 11); ctx.fillStyle = '#ffffff'; ctx.fill(); ctx.restore();
+  ctx.beginPath(); ctx.moveTo(hx - 5, by + 10); ctx.lineTo(hx + 5, by + 10); ctx.lineTo(hx, by + 16); ctx.fillStyle = '#ffffff'; ctx.fill();
+  text('TAP', hx, by + 1, 11, '#2b3350', 900);
+}
+
+function drawTip() {
+  const tip = LEVELS[levelIdx].tip; if (!tip || state !== 'play') return;
+  const a = easeOutCubic(clamp01((now - levelBorn - 500) / 500));
+  ctx.save(); ctx.globalAlpha = a * 0.6; ctx.translate(0, (1 - a) * 8);
+  text(tip, VW / 2, 604, 12, '#ffffff', 600);
+  ctx.restore();
+}
+
+function drawOverlay() {
+  if (state === 'play') return;
+  const win = state === 'win', t = clamp01((now - stateT - (win ? 500 : 200)) / 380);
+  if (t <= 0) return;
+  ctx.fillStyle = `rgba(12,14,22,${0.62 * easeOutCubic(t)})`; ctx.fillRect(0, 0, VW, VH);
+  const e = easeOutBack(t), cx = VW / 2, cy = 330, w = 250, h = 200;
+  ctx.save(); ctx.globalAlpha = Math.min(1, t * 2.5);
+  ctx.translate(cx, cy); ctx.scale(0.7 + 0.3 * e, 0.7 + 0.3 * e); ctx.translate(-cx, -cy);
+  ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = 30; ctx.shadowOffsetY = 10;
+  rr(cx - w / 2, cy - h / 2, w, h, 22);
+  const cg = ctx.createLinearGradient(0, cy - h / 2, 0, cy + h / 2); cg.addColorStop(0, '#343d61'); cg.addColorStop(1, '#262d49');
+  ctx.fillStyle = cg; ctx.fill(); ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 1.5; ctx.stroke();
+  // icon badge, popping in a little after the card
+  const it = easeOutBack(clamp01((now - stateT - (win ? 650 : 330)) / 400)), ic = win ? '#4cd97b' : '#ff4d5e', iy = cy - h / 2 + 4;
+  ctx.save(); ctx.translate(cx, iy); ctx.scale(it, it);
+  if (win) {                     // rotating rays behind the badge
+    ctx.save(); ctx.rotate(now / 1800); ctx.fillStyle = 'rgba(76,217,123,0.16)';
+    for (let i = 0; i < 10; i++) { ctx.rotate(Math.PI / 5); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-7, -62); ctx.lineTo(7, -62); ctx.fill(); }
+    ctx.restore();
+  }
+  ctx.beginPath(); ctx.arc(0, 0, 36, 0, 7); ctx.fillStyle = ic; ctx.fill();
+  ctx.lineWidth = 5; ctx.strokeStyle = '#262d49'; ctx.stroke();
+  if (win) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.beginPath(); ctx.moveTo(-13, 1); ctx.lineTo(-4, 11); ctx.lineTo(14, -9); ctx.stroke(); }
+  else iconRestart(0, 0, 15, '#fff');
+  ctx.restore();
+  const last = levelIdx === LEVELS.length - 1;
+  text(win ? (last ? 'All levels cleared!' : 'Level complete!') : 'Storage overflow!', cx, cy + 4, 21, '#ffffff', 800);
+  text(win ? `${LEVELS[levelIdx].name} crumbled in ${taps} tap${taps === 1 ? '' : 's'}` : 'Too much sand had nowhere to go', cx, cy + 32, 12, 'rgba(255,255,255,0.6)', 600);
+  const ready = now - stateT > (win ? 600 : 350), pulse = 0.5 + 0.5 * Math.sin(now / 280);
+  rr(cx - 80, cy + 55, 160, 32, 16); ctx.fillStyle = ic; ctx.globalAlpha *= ready ? 0.85 + 0.15 * pulse : 0.4; ctx.fill();
+  text(win ? (last ? 'Play again' : 'Next level') : 'Try again', cx, cy + 72, 13, '#ffffff', 800);
+  ctx.restore();
 }
 
 function render() {
   ctx.setTransform(cv.width / VW, 0, 0, cv.height / VH, 0, 0);
-  const bg = ctx.createLinearGradient(0, 0, 0, VH); bg.addColorStop(0, '#2b3350'); bg.addColorStop(1, '#1d2236');
-  ctx.fillStyle = bg; ctx.fillRect(0, 0, VW, VH);
-  for (let i = 0; i < LEVELS.length; i++) {
-    ctx.beginPath(); ctx.arc(20 + i * 16, 22, i === levelIdx ? 5 : 3.5, 0, 7);
-    ctx.fillStyle = i < levelIdx ? '#7fe3a0' : i === levelIdx ? '#ffffff' : 'rgba(255,255,255,0.25)'; ctx.fill();
-  }
-  drawLevelButton(128, 'PREV', -1, levelIdx > 0);
-  drawLevelButton(182, 'NEXT', 1, levelIdx < LEVELS.length - 1);
-  iconRestart(338, 22, 8, 'rgba(255,255,255,0.75)');
+  ctx.save();
+  if (shake) ctx.translate((Math.random() - 0.5) * shake * 2, (Math.random() - 0.5) * shake * 2);
+  drawBackground();
+  drawTopBar();
   drawTube();
+  drawLeaving();
   for (let k = 0; k < NSLOT; k++) drawBucket(k);
   drawQueue();
   drawBoard();
   drawBar();
   drawGrains();
-  const L = LEVELS[levelIdx];
-  if (L.hint && taps === 0 && state === 'play') {
-    const hx = BX + (L.hint[0] + 0.5) * CS, hy = BY + (L.hint[1] + 0.5) * CS, t = (now % 1100) / 1100;
-    ctx.strokeStyle = `rgba(255,255,255,${1 - t})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(hx, hy, 8 + t * 22, 0, 7); ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.beginPath(); ctx.arc(hx, hy, 8 - Math.sin(t * Math.PI) * 2, 0, 7); ctx.fill();
+  drawRings();
+  drawParts();
+  drawHint();
+  drawTip();
+  ctx.restore();
+  if (flash) {
+    const t = (now - flash.t0) / flash.dur;
+    if (t >= 1) flash = null; else { ctx.fillStyle = `rgba(${flash.c},${flash.a * (1 - t)})`; ctx.fillRect(0, 0, VW, VH); }
   }
-  for (const c of confetti) { c.x += c.vx; c.y += c.vy; c.vy += 0.35; c.r += 0.2; ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.r); ctx.fillStyle = c.c; ctx.fillRect(-4, -3, 8, 6); ctx.restore(); }
-  if (state !== 'play') {
-    const t = Math.min(1, (now - stateT - (state === 'win' ? 500 : 200)) / 250);
-    if (t > 0) {
-      ctx.fillStyle = `rgba(16,19,28,${0.6 * t})`; ctx.fillRect(0, 0, VW, VH);
-      const cx = VW / 2, cy = 320, r = 54 * (0.6 + 0.4 * t);
-      ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fillStyle = state === 'win' ? '#4cd97b' : '#ff4d5e'; ctx.fill();
-      if (state === 'win') { ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(cx - 14, cy - 24); ctx.lineTo(cx + 26, cy); ctx.lineTo(cx - 14, cy + 24); ctx.fill(); }
-      else iconRestart(cx, cy, 24, '#fff');
-    }
-  }
+  drawOverlay();
+  const ft = clamp01((now - levelBorn) / 320);  // level transition fade
+  if (ft < 1) { ctx.fillStyle = `rgba(16,19,28,${0.7 * (1 - easeOutCubic(ft))})`; ctx.fillRect(0, 0, VW, VH); }
 }
 
 // ---------- loop + input ----------
-function frame(t) { const dt = Math.min(0.05, Math.max(0, (t - lastT) / 1000)); lastT = t; now = t; update(dt); render(); requestAnimationFrame(frame); }
+function frame(t) { const dt = Math.min(0.05, Math.max(0, (t - lastT) / 1000)); lastT = t; now = t; frameDt = dt || 0.016; update(dt); render(); requestAnimationFrame(frame); }
 
 function fit() {
   const s = Math.min(innerWidth / VW, innerHeight / VH), dpr = Math.min(3, devicePixelRatio || 1);
@@ -504,22 +860,37 @@ function fit() {
 }
 addEventListener('resize', fit); fit();
 
+function toLogical(e) { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * VW, (e.clientY - r.top) / r.height * VH]; }
+
+cv.addEventListener('pointermove', e => {
+  if (e.pointerType !== 'mouse') return;
+  const [x, y] = toLogical(e), id = hitButton(x, y);
+  hover = id && btnEnabled(id) ? id : null;
+  const overBoard = state === 'play' && x >= BX && x < BX + GW * CS && y >= BY && y < BY + PH * CS;
+  cv.style.cursor = hover || state !== 'play' || overBoard ? 'pointer' : 'default';
+});
+cv.addEventListener('pointerleave', () => { hover = null; cv.style.cursor = 'default'; });
+
 cv.addEventListener('pointerdown', e => {
   e.preventDefault(); const a = audio(); if (a && a.state === 'suspended') a.resume();
-  const r = cv.getBoundingClientRect();
-  const x = (e.clientX - r.left) / r.width * VW, y = (e.clientY - r.top) / r.height * VH;
-  if (y >= 6 && y <= 38 && x >= 128 && x <= 176) {
-    if (levelIdx > 0) loadLevel(levelIdx - 1);
+  const [x, y] = toLogical(e);
+  const btn = hitButton(x, y);
+  if (btn === 'prev') {
+    press = { id: 'prev', t: now };
+    if (levelIdx > 0) { loadLevel(levelIdx - 1); blip(600, 400, 0.08, 'sine', 0.06); }
     return;
   }
-  if (y >= 6 && y <= 38 && x >= 182 && x <= 230) {
-    if (levelIdx < LEVELS.length - 1) loadLevel(levelIdx + 1);
+  if (btn === 'next') {
+    press = { id: 'next', t: now };
+    if (levelIdx < LEVELS.length - 1) { loadLevel(levelIdx + 1); blip(400, 600, 0.08, 'sine', 0.06); }
     return;
   }
   if (state === 'win') { if (now - stateT > 600) loadLevel((levelIdx + 1) % LEVELS.length); return; }
   if (state === 'fail') { if (now - stateT > 350) loadLevel(levelIdx); return; }
-  if (x > 318 && y < 38) { loadLevel(levelIdx); return; }
-  tapCell(Math.floor((x - BX) / CS), Math.floor((y - BY) / CS));
+  if (btn === 'restart') { press = { id: 'restart', t: now }; spinT = now; loadLevel(levelIdx); return; }
+  if (!tapCell(Math.floor((x - BX) / CS), Math.floor((y - BY) / CS)) && y >= BY && y < BY + PH * CS) {
+    ring(x, y, 'rgba(255,255,255,0.35)', 3, 14, 220, 2);   // missed tap: small soft ripple
+  }
 });
 
 loadLevel(levelIdx);
