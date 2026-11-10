@@ -21,8 +21,8 @@ const GW = 64, PR = 64, HOP = 6;     // sand grid: 64x64 picture + 6 rows of fun
 const GH = PR + HOP, CS = 5;         // cell size in logical px
 const BX = (VW - GW * CS) / 2, BY = 146;
 const EMPTY = 0, WALL = 1, SAND = 2;
-const NHOLE = 4, HWD = 6;            // 4 holes, each 6 cells wide
-const HOLE_X = [5, 21, 37, 53];      // first column of each hole
+const NHOLE = 8, HWD = 4;            // 8 holes, each 4 cells wide
+const HOLE_X = [2, 10, 18, 26, 34, 42, 50, 58]; // first column of each hole
 const NSLOT = 3, BMAX = 140;         // baskets on top, max grains per basket
 const LX = 8, RX = 352;              // side tubes
 const FLOOR = BY + GH * CS;          // bottom of the sand box
